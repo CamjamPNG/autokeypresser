@@ -1,5 +1,5 @@
 <p align="center">
-	<img src="img/banner.png" alt="AutoKeyPresser 1.0" />
+	<img src="img/banner.png" alt="AutoKeyPresser 1.1" />
 </p>
 
 <p align="center">
@@ -15,7 +15,7 @@ AutoKeyPresser is an open-source, easy to use, cross-platform auto presser for
 any mouse button, on a classic Windows-style utility interface.
 
 ![Example image](img/example.png)
-*v1.0*
+*v1.1*
 
 [![forthebadge](https://forthebadge.com/images/badges/made-with-python.svg)](https://www.python.org/)
 
@@ -29,7 +29,8 @@ any mouse button, on a classic Windows-style utility interface.
  * Repeat until stopped or repeat a given amount of times;
  * Click on the current cursor location or a specified fixed location only;
  * Start / Stop with a custom global hotkey [default F6];
- * Settings are remembered between runs.
+ * Settings are remembered between runs;
+ * Checks GitHub Releases for updates and can download the Windows installer.
 
 ### How fast can it press?
 With a 1 millisecond interval it can easily reach hundreds of presses per

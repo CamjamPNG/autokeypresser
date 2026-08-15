@@ -1,12 +1,15 @@
 import queue
 import tkinter as tk
 from tkinter import messagebox
+import threading
+import webbrowser
 
 from . import keys as keymod
 from .config import load_config, save_config
 from .engine import PressEngine, PressSettings
+from . import updater
 
-APP_NAME = "AutoKeyPresser 1.0"
+APP_NAME = "AutoKeyPresser 1.1"
 
 HOTKEY_MODS = [
     "None",
@@ -74,6 +77,7 @@ class AutoClickerApp:
 
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.root.after(80, self._poll_queue)
+        self.root.after(1200, self._check_for_updates)
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self):
@@ -326,9 +330,60 @@ class AutoClickerApp:
                 elif msg == "done":
                     self.status_var.set("Stopped - clicks: %d" % value)
                     self._update_running_ui(False)
+                elif msg == "update":
+                    self._offer_update(value)
+                elif msg == "update_downloaded":
+                    self._finish_update(value)
+                elif msg == "update_error":
+                    self.status_var.set("Update failed")
+                    messagebox.showerror(APP_NAME, "Could not download update:\n%s" % value)
         except queue.Empty:
             pass
         self.root.after(80, self._poll_queue)
+
+    def _check_for_updates(self):
+        def worker():
+            try:
+                release = updater.check_latest_release()
+            except Exception:
+                release = None
+            if release:
+                self.queue.put(("update", release))
+
+        threading.Thread(target=worker, daemon=True, name="update-check").start()
+
+    def _offer_update(self, release):
+        version = release.get("tag_name", "new version")
+        if not messagebox.askyesno(
+            APP_NAME,
+            "%s is available. Download and install it now?" % version,
+        ):
+            return
+        installer = updater.installer_asset(release)
+        if not installer:
+            webbrowser.open(release.get("html_url", updater.RELEASES_PAGE))
+            return
+
+        self.status_var.set("Downloading update...")
+
+        def worker():
+            try:
+                path = updater.download_installer(installer)
+                self.queue.put(("update_downloaded", path))
+            except Exception as exc:
+                self.queue.put(("update_error", str(exc)))
+
+        threading.Thread(target=worker, daemon=True, name="update-download").start()
+
+    def _finish_update(self, path):
+        if not messagebox.askyesno(
+            APP_NAME,
+            "The update is downloaded. Close AutoKeyPresser and run the installer?",
+        ):
+            self.status_var.set("Update downloaded")
+            return
+        updater.launch_installer(path)
+        self._on_close()
 
     # ----------------------------------------------------------------- hotkey
     def _start_hotkey_listener(self):

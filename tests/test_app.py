@@ -1,8 +1,10 @@
 import unittest
+from unittest import mock
 
 from autoclicker import keys
 from autoclicker.app import build_hotkey
 from autoclicker.engine import PressSettings
+from autoclicker import updater
 
 
 class KeyMappingTests(unittest.TestCase):
@@ -52,6 +54,18 @@ class SettingsTests(unittest.TestCase):
         self.assertTrue(s.repeat_until_stopped)
         self.assertEqual(s.mouse_button, "left")
         self.assertEqual(s.interval_seconds, 0.1)
+
+
+class UpdaterTests(unittest.TestCase):
+    def test_version_comparison(self):
+        self.assertTrue(updater.is_newer("v1.2"))
+        self.assertFalse(updater.is_newer("v1.1"))
+        self.assertFalse(updater.is_newer("not-a-version"))
+
+    def test_windows_installer_asset(self):
+        release = {"assets": [{"name": "AutoKeyPresser-Setup.exe", "browser_download_url": "url"}]}
+        with mock.patch.object(updater.platform, "system", return_value="Windows"):
+            self.assertEqual(updater.installer_asset(release), "url")
 
 
 if __name__ == "__main__":
