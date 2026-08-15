@@ -55,6 +55,9 @@ class PressEngine:
     def _run(self):
         try:
             pyautogui.FAILSAFE = False
+            # PyAutoGUI defaults to a 100 ms pause after every call, which
+            # caps the presser at roughly 10 actions per second.
+            pyautogui.PAUSE = 0
             interval = max(self.settings.interval_seconds, 0.001)
             limit = None if self.settings.repeat_until_stopped else max(
                 self.settings.repeat_count, 0

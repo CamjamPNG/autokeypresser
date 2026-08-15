@@ -10,7 +10,7 @@ from .engine import PressEngine, PressSettings
 from .profiles import load_profiles, save_profiles
 from . import updater
 
-APP_NAME = "AutoKeyPresser 1.3"
+APP_NAME = "AutoKeyPresser 1.4"
 
 HOTKEY_MODS = [
     "None",

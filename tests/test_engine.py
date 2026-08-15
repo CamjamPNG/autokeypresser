@@ -1,6 +1,7 @@
 import unittest
 from unittest import mock
 
+import autoclicker.engine as engine_module
 from autoclicker.engine import PressEngine, PressSettings
 
 
@@ -12,6 +13,18 @@ def make_engine(**overrides):
 
 
 class PressEngineTests(unittest.TestCase):
+    def test_start_disables_pyautogui_default_pause(self):
+        settings = make_engine(repeat_until_stopped=False, repeat_count=1, interval_seconds=0)
+        with mock.patch("autoclicker.engine.pyautogui.click") as click:
+            engine = PressEngine(settings, on_status=lambda _m: None)
+            engine.start()
+            thread = engine._thread
+            thread.join(timeout=2)
+        self.assertEqual(click.call_count, 1)
+        self.assertEqual(engine.count, 1)
+        self.assertEqual(engine.settings.interval_seconds, 0)
+        self.assertEqual(engine_module.pyautogui.PAUSE, 0)
+
     def test_repeat_count_stops_after_n(self):
         settings = make_engine(repeat_until_stopped=False, repeat_count=3, interval_seconds=0)
         statuses = []

@@ -2,7 +2,7 @@
 ; Compile with:  ISCC.exe installer.iss
 
 #define MyAppName "AutoKeyPresser"
-#define MyAppVersion "1.3"
+#define MyAppVersion "1.4"
 #define MyAppPublisher "CamjamPNG"
 #define MyAppExeName "AutoKeyPresser.exe"
 #define MyAppURL "https://github.com/CamjamPNG/autokeypresser"
