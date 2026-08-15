@@ -10,7 +10,7 @@ from .engine import PressEngine, PressSettings
 from .profiles import load_profiles, save_profiles
 from . import updater
 
-APP_NAME = "AutoKeyPresser 1.2"
+APP_NAME = "AutoKeyPresser 1.3"
 
 HOTKEY_MODS = [
     "None",
@@ -93,6 +93,11 @@ class AutoClickerApp:
         self.mins_var = tk.StringVar()
         self.secs_var = tk.StringVar()
         self.ms_var = tk.StringVar()
+        self.hold_mode_var = tk.BooleanVar()
+        self.hold_duration_var = tk.StringVar(value="50")
+        self.randomize_var = tk.BooleanVar()
+        self.random_min_var = tk.StringVar(value="50")
+        self.random_max_var = tk.StringVar(value="150")
 
         fields = [
             ("h", self.hours_var, 3),
@@ -105,9 +110,31 @@ class AutoClickerApp:
             spin.grid(row=0, column=col * 2, padx=(0 if col == 0 else 8, 2), pady=2)
             tk.Label(interval, text=label).grid(row=0, column=col * 2 + 1, sticky="w")
 
+        advanced = tk.LabelFrame(root, text="Advanced timing", padx=6, pady=3)
+        advanced.grid(row=1, column=0, columnspan=3, padx=6, pady=3, sticky="we")
+        tk.Checkbutton(advanced, text="Hold action for", variable=self.hold_mode_var).grid(
+            row=0, column=0, sticky="w"
+        )
+        tk.Spinbox(advanced, from_=1, to=999999, textvariable=self.hold_duration_var, width=6).grid(
+            row=0, column=1, padx=2
+        )
+        tk.Label(advanced, text="ms").grid(row=0, column=2, sticky="w")
+        tk.Checkbutton(advanced, text="Random interval", variable=self.randomize_var).grid(
+            row=0, column=3, padx=(12, 2), sticky="w"
+        )
+        tk.Label(advanced, text="min").grid(row=0, column=4)
+        tk.Spinbox(advanced, from_=1, to=999999, textvariable=self.random_min_var, width=5).grid(
+            row=0, column=5
+        )
+        tk.Label(advanced, text="max").grid(row=0, column=6, padx=(3, 0))
+        tk.Spinbox(advanced, from_=1, to=999999, textvariable=self.random_max_var, width=5).grid(
+            row=0, column=7
+        )
+        tk.Label(advanced, text="ms").grid(row=0, column=8, sticky="w")
+
         # --- Click options --------------------------------------------------
         opts = tk.LabelFrame(root, text="Click options", padx=6, pady=4)
-        opts.grid(row=1, column=0, columnspan=3, padx=6, pady=4, sticky="we")
+        opts.grid(row=2, column=0, columnspan=3, padx=6, pady=4, sticky="we")
 
         left = tk.Frame(opts)
         left.grid(row=0, column=0, sticky="nw")
@@ -169,7 +196,7 @@ class AutoClickerApp:
 
         # --- Cursor position ------------------------------------------------
         cursor = tk.LabelFrame(root, text="Cursor position", padx=6, pady=4)
-        cursor.grid(row=2, column=0, columnspan=3, padx=6, pady=4, sticky="we")
+        cursor.grid(row=3, column=0, columnspan=3, padx=6, pady=4, sticky="we")
 
         self.cursor_mode_var = tk.StringVar(value="current")
         self.x_var = tk.StringVar(value="0")
@@ -199,7 +226,7 @@ class AutoClickerApp:
 
         # --- Bottom buttons -------------------------------------------------
         bottom = tk.Frame(root)
-        bottom.grid(row=3, column=0, columnspan=3, padx=6, pady=(4, 4), sticky="we")
+        bottom.grid(row=4, column=0, columnspan=3, padx=6, pady=(4, 4), sticky="we")
         bottom.columnconfigure(1, weight=1)
 
         tk.Button(bottom, text="Hotkey setting", command=self._open_hotkey_settings).grid(
@@ -219,7 +246,7 @@ class AutoClickerApp:
         tk.Label(
             root, textvariable=self.status_var, anchor="w",
             relief=tk.SUNKEN, bd=1,
-        ).grid(row=4, column=0, columnspan=3, sticky="we", padx=6, pady=(0, 6))
+        ).grid(row=5, column=0, columnspan=3, sticky="we", padx=6, pady=(0, 6))
 
     # ---------------------------------------------------------------- config
     def _apply_config(self):
@@ -242,6 +269,11 @@ class AutoClickerApp:
         self.cursor_mode_var.set("pick" if c.get("use_fixed_position") else "current")
         self.x_var.set(str(c.get("x", "0")))
         self.y_var.set(str(c.get("y", "0")))
+        self.hold_mode_var.set(c.get("hold_mode", False))
+        self.hold_duration_var.set(str(c.get("hold_duration_ms", "50")))
+        self.randomize_var.set(c.get("randomize_interval", False))
+        self.random_min_var.set(str(c.get("random_min_ms", "50")))
+        self.random_max_var.set(str(c.get("random_max_ms", "150")))
 
     def _collect_config(self):
         c = self.config
@@ -259,6 +291,11 @@ class AutoClickerApp:
         c["use_fixed_position"] = self.cursor_mode_var.get() == "pick"
         c["x"] = self.x_var.get()
         c["y"] = self.y_var.get()
+        c["hold_mode"] = self.hold_mode_var.get()
+        c["hold_duration_ms"] = self.hold_duration_var.get()
+        c["randomize_interval"] = self.randomize_var.get()
+        c["random_min_ms"] = self.random_min_var.get()
+        c["random_max_ms"] = self.random_max_var.get()
         return c
 
     # ------------------------------------------------------------- behaviors
@@ -295,6 +332,13 @@ class AutoClickerApp:
         s.use_fixed_position = self.cursor_mode_var.get() == "pick"
         s.fixed_x = int(self.x_var.get() or 0)
         s.fixed_y = int(self.y_var.get() or 0)
+        s.hold_mode = self.hold_mode_var.get()
+        s.hold_duration_seconds = max(int(self.hold_duration_var.get() or 1) / 1000, 0.001)
+        s.randomize_interval = self.randomize_var.get()
+        s.random_min_seconds = max(int(self.random_min_var.get() or 1) / 1000, 0.001)
+        s.random_max_seconds = max(int(self.random_max_var.get() or 1) / 1000, 0.001)
+        if s.randomize_interval and s.random_max_seconds < s.random_min_seconds:
+            raise ValueError("Random maximum must not be lower than minimum.")
         return s
 
     def _current_action(self):
@@ -308,6 +352,11 @@ class AutoClickerApp:
             "use_fixed_position": settings.use_fixed_position,
             "fixed_x": settings.fixed_x,
             "fixed_y": settings.fixed_y,
+            "hold_mode": settings.hold_mode,
+            "hold_duration_seconds": settings.hold_duration_seconds,
+            "randomize_interval": settings.randomize_interval,
+            "random_min_seconds": settings.random_min_seconds,
+            "random_max_seconds": settings.random_max_seconds,
         }
 
     def _apply_action(self, action):
@@ -321,6 +370,11 @@ class AutoClickerApp:
         self.cursor_mode_var.set("pick" if action.get("use_fixed_position") else "current")
         self.x_var.set(str(action.get("fixed_x", 0)))
         self.y_var.set(str(action.get("fixed_y", 0)))
+        self.hold_mode_var.set(action.get("hold_mode", False))
+        self.hold_duration_var.set(str(round(float(action.get("hold_duration_seconds", 0.05)) * 1000)))
+        self.randomize_var.set(action.get("randomize_interval", False))
+        self.random_min_var.set(str(round(float(action.get("random_min_seconds", 0.05)) * 1000)))
+        self.random_max_var.set(str(round(float(action.get("random_max_seconds", 0.15)) * 1000)))
         self._refresh_action_fields()
 
     def _toggle(self):
@@ -339,6 +393,7 @@ class AutoClickerApp:
             return
         self.engine = PressEngine(self.settings, on_status=self.queue.put)
         self.settings.actions = list(self.pending_actions)
+        self.pending_actions = []
         self.engine.start()
         self._update_running_ui(True)
         self.status_var.set("Running - clicks: 0")
@@ -423,7 +478,9 @@ class AutoClickerApp:
             from pynput import keyboard
 
             combo = build_hotkey(self.config["hotkey_mod"], self.config["hotkey_key"])
-            self.hotkey_listener = keyboard.GlobalHotKeys({combo: self._toggle})
+            self.hotkey_listener = keyboard.GlobalHotKeys(
+                {combo: self._toggle, "<f12>": self._emergency_stop}
+            )
             self.hotkey_listener.start()
         except Exception as exc:
             self.hotkey_listener = None
@@ -438,6 +495,11 @@ class AutoClickerApp:
             except Exception:
                 pass
             self.hotkey_listener = None
+
+    def _emergency_stop(self):
+        if self.engine and self.engine.running:
+            self.engine.stop()
+            self.status_var.set("Emergency stop")
 
     def _update_hotkey_label(self):
         mod = self.config["hotkey_mod"]
@@ -515,6 +577,10 @@ How to use
    pick a fixed screen position.
 5. Press "Start" or the global hotkey to begin; press it again to stop.
 
+Emergency stop
+--------------
+F12 always stops the active press immediately.
+
 Global hotkey
 -------------
 The default hotkey is F6. Change it via "Hotkey setting". The hotkey
@@ -530,7 +596,7 @@ Permissions
 Safety
 ------
 A 0 ms interval runs extremely fast. Use the Stop button or the
-global hotkey to halt immediately. The counter on the status bar
+F12 emergency key or the global hotkey to halt immediately. The counter on the status bar
 shows how many presses have been sent.
 
 The application is provided as-is. Use responsibly and only on

@@ -104,6 +104,21 @@ class PressEngineTests(unittest.TestCase):
         self.assertEqual(engine.count, 4)
         self.assertEqual([call.args[0] for call in press.call_args_list], ["a", "b", "a", "b"])
 
+    def test_hold_keyboard_uses_key_down_and_up(self):
+        settings = make_engine(
+            input_type="keyboard", key="a", hold_mode=True,
+            hold_duration_seconds=0.001, repeat_until_stopped=False,
+            repeat_count=1, interval_seconds=0,
+        )
+        with mock.patch("autoclicker.engine.pyautogui.keyDown") as down, \
+             mock.patch("autoclicker.engine.pyautogui.keyUp") as up:
+            engine = PressEngine(settings, on_status=lambda _m: None)
+            engine.start()
+            thread = engine._thread
+            thread.join(timeout=2)
+        down.assert_called_once_with("a")
+        up.assert_called_once_with("a")
+
 
 if __name__ == "__main__":
     unittest.main()

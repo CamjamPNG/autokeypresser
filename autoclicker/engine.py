@@ -1,4 +1,6 @@
 import threading
+import random
+import time
 from dataclasses import dataclass, field
 
 import pyautogui
@@ -18,6 +20,11 @@ class PressSettings:
     fixed_x: int = 0
     fixed_y: int = 0
     actions: list = field(default_factory=list)
+    hold_mode: bool = False
+    hold_duration_seconds: float = 0.05
+    randomize_interval: bool = False
+    random_min_seconds: float = 0.05
+    random_max_seconds: float = 0.15
 
 
 class PressEngine:
@@ -63,7 +70,7 @@ class PressEngine:
                     self.count += 1
                     done += 1
                     self.on_status(("status", self.count))
-                    if self._stop_event.wait(interval):
+                    if self._stop_event.wait(self._next_interval(interval)):
                         break
                 cycles += 1
                 if limit is not None and cycles >= limit:
@@ -80,19 +87,35 @@ class PressEngine:
         else:
             value = lambda name, default=None: action.get(name, default)
 
+        hold = value("hold_mode", False)
+        hold_duration = max(float(value("hold_duration_seconds", 0.05)), 0.001)
         if value("input_type", "mouse") == "mouse":
             x, y = (
                 (value("fixed_x", 0), value("fixed_y", 0))
                 if value("use_fixed_position", False)
                 else pyautogui.position()
             )
-            if value("click_type", "single") == "double":
+            if hold:
+                pyautogui.moveTo(x, y)
+                pyautogui.mouseDown(button=value("mouse_button", "left"))
+                time.sleep(hold_duration)
+                pyautogui.mouseUp(button=value("mouse_button", "left"))
+            elif value("click_type", "single") == "double":
                 pyautogui.click(x, y, clicks=2, interval=0.02, button=value("mouse_button", "left"))
             else:
                 pyautogui.click(x, y, button=value("mouse_button", "left"))
         else:
             modifiers = value("modifiers", [])
             key = value("key", "a")
+            if hold:
+                for modifier in modifiers:
+                    pyautogui.keyDown(modifier)
+                pyautogui.keyDown(key)
+                time.sleep(hold_duration)
+                pyautogui.keyUp(key)
+                for modifier in reversed(modifiers):
+                    pyautogui.keyUp(modifier)
+                return
             if modifiers:
                 pyautogui.hotkey(*modifiers, key)
             else:
@@ -102,3 +125,10 @@ class PressEngine:
                     pyautogui.hotkey(*modifiers, key)
                 else:
                     pyautogui.press(key)
+
+    def _next_interval(self, default):
+        if not self.settings.randomize_interval:
+            return default
+        low = max(self.settings.random_min_seconds, 0.001)
+        high = max(self.settings.random_max_seconds, low)
+        return random.uniform(low, high)
