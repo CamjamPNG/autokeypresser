@@ -2,7 +2,7 @@
 ; Compile with:  ISCC.exe installer.iss
 
 #define MyAppName "AutoKeyPresser"
-#define MyAppVersion "1.4"
+#define MyAppVersion "1.5"
 #define MyAppPublisher "CamjamPNG"
 #define MyAppExeName "AutoKeyPresser.exe"
 #define MyAppURL "https://github.com/CamjamPNG/autokeypresser"
@@ -43,3 +43,9 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+
+[Registry]
+Root: HKCR; Subkey: ".akp"; ValueType: string; ValueName: ""; ValueData: "AutoKeyPresser.Macro"; Flags: uninsdeletekey
+Root: HKCR; Subkey: "AutoKeyPresser.Macro"; ValueType: string; ValueName: ""; ValueData: "AutoKeyPresser macro"; Flags: uninsdeletekey
+Root: HKCR; Subkey: "AutoKeyPresser.Macro\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#MyAppExeName},0"
+Root: HKCR; Subkey: "AutoKeyPresser.Macro\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""

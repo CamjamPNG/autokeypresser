@@ -1,11 +1,12 @@
 <p align="center">
-	<img src="img/banner.png" alt="AutoKeyPresser 1.4" />
+	<img src="img/banner.png" alt="AutoKeyPresser 1.5" />
 </p>
 
 <p align="center">
 	<img alt="Python version" src="https://img.shields.io/badge/python-3.8+-blue" />
 	<img alt="Platforms" src="https://img.shields.io/badge/platform-windows%20%7C%20linux%20%7C%20macos-lightgrey" />
 	<img alt="License" src="https://img.shields.io/badge/license-MIT-green" />
+	<img alt="CI" src="https://github.com/CamjamPNG/autokeypresser/actions/workflows/ci.yml/badge.svg" />
 	<img alt="Dependencies" src="https://img.shields.io/badge/dependencies-2-brightgreen" />
 </p>
 
@@ -15,7 +16,7 @@ AutoKeyPresser is an open-source, easy to use, cross-platform auto presser for
 any mouse button, on a classic Windows-style utility interface.
 
 ![Example image](img/example.png)
-*v1.4*
+*v1.5*
 
 [![forthebadge](https://forthebadge.com/images/badges/made-with-python.svg)](https://www.python.org/)
 
@@ -35,7 +36,9 @@ any mouse button, on a classic Windows-style utility interface.
  * Runs keyboard and mouse actions as reusable sequences;
  * Hold mode with configurable press duration;
  * Randomized intervals;
- * F12 emergency stop.
+ * F12 emergency stop;
+ * Global keyboard/mouse macro recording;
+ * Shareable proprietary `.akp` macro files.
 
 ### How fast can it press?
 With a 1 millisecond interval it can easily reach hundreds of presses per
@@ -57,6 +60,13 @@ python main.py
 ```
 
 Press **Start** or the global hotkey to begin; press it again to stop.
+
+## Macro Files
+
+Record keyboard and mouse activity from the **Macros (.akp)** panel. Save the
+recording as an `.akp` file and share it with other AutoKeyPresser users.
+The format includes an AutoKeyPresser signature, version, and checksum, so
+foreign or modified files are rejected instead of being treated as macros.
 
 ## Permissions
 
@@ -93,6 +103,12 @@ build.bat           # Windows: portable exe + portable zip + Inno Setup installe
   (`winget install -e --id JRSoftware.InnoSetup`).
 - The **Linux .deb** needs `dpkg-deb`; the **AppImage** needs `appimagetool`.
 - The **macOS .dmg** needs `hdiutil` (bundled with macOS).
+
+## Package Managers
+
+Submission-ready manifests are in `packaging/` for winget, Chocolatey, Scoop,
+Homebrew, and the AUR. Replace the documented SHA-256 placeholders after a
+release build, then submit each manifest to its package repository.
 
 
 ## Safety

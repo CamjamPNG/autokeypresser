@@ -1,16 +1,18 @@
 import queue
+import sys
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import filedialog, messagebox
 import threading
 import webbrowser
 
 from . import keys as keymod
 from .config import load_config, save_config
 from .engine import PressEngine, PressSettings
+from . import macro
 from .profiles import load_profiles, save_profiles
 from . import updater
 
-APP_NAME = "AutoKeyPresser 1.4"
+APP_NAME = "AutoKeyPresser 1.5"
 
 HOTKEY_MODS = [
     "None",
@@ -70,12 +72,16 @@ class AutoClickerApp:
         self.engine = None
         self.hotkey_listener = None
         self.pending_actions = []
+        self.recorder = None
+        self.last_macro = []
+        self.macro_player = None
 
         self._build_ui()
         self._apply_config()
         self._refresh_action_fields()
         self._update_hotkey_label()
         self._start_hotkey_listener()
+        self._load_macro_from_args()
 
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.root.after(80, self._poll_queue)
@@ -224,9 +230,30 @@ class AutoClickerApp:
             row=0, column=5
         )
 
+        # --- Macros ----------------------------------------------------------
+        macros = tk.LabelFrame(root, text="Macros (.akp)", padx=6, pady=3)
+        macros.grid(row=4, column=0, columnspan=3, padx=6, pady=4, sticky="we")
+        self.macro_status_var = tk.StringVar(value="Macro idle")
+        self.record_button = tk.Button(macros, text="Record", width=8, command=self._toggle_record)
+        self.record_button.grid(row=0, column=0, padx=2, pady=2)
+        tk.Button(macros, text="Stop", width=6, command=self._stop_record).grid(
+            row=0, column=1, padx=2, pady=2
+        )
+        self.play_macro_button = tk.Button(macros, text="Play", width=6, command=self._play_macro)
+        self.play_macro_button.grid(row=0, column=2, padx=2, pady=2)
+        tk.Button(macros, text="Save...", width=7, command=self._save_macro).grid(
+            row=0, column=3, padx=2, pady=2
+        )
+        tk.Button(macros, text="Load...", width=7, command=self._load_macro).grid(
+            row=0, column=4, padx=2, pady=2
+        )
+        tk.Label(macros, textvariable=self.macro_status_var, anchor="w").grid(
+            row=0, column=5, padx=(6, 0), sticky="w"
+        )
+
         # --- Bottom buttons -------------------------------------------------
         bottom = tk.Frame(root)
-        bottom.grid(row=4, column=0, columnspan=3, padx=6, pady=(4, 4), sticky="we")
+        bottom.grid(row=5, column=0, columnspan=3, padx=6, pady=(4, 4), sticky="we")
         bottom.columnconfigure(1, weight=1)
 
         tk.Button(bottom, text="Hotkey setting", command=self._open_hotkey_settings).grid(
@@ -246,7 +273,7 @@ class AutoClickerApp:
         tk.Label(
             root, textvariable=self.status_var, anchor="w",
             relief=tk.SUNKEN, bd=1,
-        ).grid(row=5, column=0, columnspan=3, sticky="we", padx=6, pady=(0, 6))
+        ).grid(row=6, column=0, columnspan=3, sticky="we", padx=6, pady=(0, 6))
 
     # ---------------------------------------------------------------- config
     def _apply_config(self):
@@ -401,6 +428,8 @@ class AutoClickerApp:
     def _stop(self):
         if self.engine:
             self.engine.stop()
+        if self.macro_player:
+            self.macro_player.stop()
 
     def _update_running_ui(self, running):
         if running:
@@ -414,6 +443,11 @@ class AutoClickerApp:
                 msg, value = self.queue.get_nowait()
                 if msg == "status":
                     self.status_var.set("Running - clicks: %d" % value)
+                elif msg == "macro_status":
+                    self.macro_status_var.set("Playing - actions: %d" % value)
+                elif msg == "macro_done":
+                    self.play_macro_button.config(text="Play")
+                    self.macro_status_var.set("Macro finished - actions: %d" % value)
                 elif msg == "done":
                     self.status_var.set("Stopped - clicks: %d" % value)
                     self._update_running_ui(False)
@@ -497,9 +531,11 @@ class AutoClickerApp:
             self.hotkey_listener = None
 
     def _emergency_stop(self):
+        self._stop()
         if self.engine and self.engine.running:
-            self.engine.stop()
             self.status_var.set("Emergency stop")
+        if self.macro_player and self.macro_player.running:
+            self.macro_status_var.set("Emergency stop")
 
     def _update_hotkey_label(self):
         mod = self.config["hotkey_mod"]
@@ -617,6 +653,91 @@ content you own or are authorized to automate.
         finally:
             self._stop_hotkey_listener()
             self.root.destroy()
+
+    # ---------------------------------------------------------------- macros
+    def _load_macro_from_args(self):
+        for argument in sys.argv[1:]:
+            if argument.lower().endswith(".akp"):
+                self._load_macro(argument)
+                break
+
+    def _toggle_record(self):
+        if self.recorder and self.recorder.recording:
+            self._stop_record()
+            return
+        self.recorder = macro.MacroRecorder()
+        try:
+            self.recorder.start()
+        except Exception as exc:
+            self.recorder = None
+            messagebox.showerror(APP_NAME, "Could not start macro recording:\n%s" % exc)
+            return
+        self.record_button.config(text="Recording")
+        self.macro_status_var.set("Recording - press Stop when done")
+
+    def _stop_record(self):
+        if not self.recorder or not self.recorder.recording:
+            return
+        self.last_macro = self.recorder.stop()
+        self.recorder = None
+        self.record_button.config(text="Record")
+        self.macro_status_var.set("Recorded %d actions" % len(self.last_macro))
+
+    def _play_macro(self):
+        if self.macro_player and self.macro_player.running:
+            self.macro_player.stop()
+            return
+        if not self.last_macro:
+            messagebox.showwarning(APP_NAME, "Record or load a macro first.")
+            return
+        try:
+            settings = self._collect_settings()
+        except ValueError:
+            messagebox.showerror(APP_NAME, "Please enter valid repeat values first.")
+            return
+        self.macro_player = macro.MacroPlayer(
+            self.last_macro,
+            repeat_count=settings.repeat_count,
+            repeat_until_stopped=settings.repeat_until_stopped,
+            on_status=self.queue.put,
+        )
+        self.macro_player.start()
+        self.play_macro_button.config(text="Stop")
+        self.macro_status_var.set("Playing macro...")
+
+    def _save_macro(self):
+        if not self.last_macro:
+            messagebox.showwarning(APP_NAME, "Record or load a macro first.")
+            return
+        path = filedialog.asksaveasfilename(
+            defaultextension=".akp",
+            filetypes=[("AutoKeyPresser Macro", "*.akp")],
+        )
+        if not path:
+            return
+        try:
+            macro.save_macro(self.last_macro, path)
+            self.macro_status_var.set("Macro saved")
+        except OSError as exc:
+            messagebox.showerror(APP_NAME, "Could not save macro:\n%s" % exc)
+
+    def _load_macro(self, path=None):
+        if path is None:
+            path = filedialog.askopenfilename(
+                filetypes=[("AutoKeyPresser Macro", "*.akp"), ("All files", "*.*")],
+            )
+        if not path:
+            return
+        try:
+            payload = macro.load_macro(path)
+        except (OSError, ValueError) as exc:
+            messagebox.showerror(APP_NAME, "Could not load macro:\n%s" % exc)
+            return
+        self.last_macro = payload["actions"]
+        self.macro_status_var.set(
+            "Loaded %s (%d actions)" % (payload.get("name", "macro"), len(self.last_macro))
+        )
+        self.play_macro_button.config(text="Play")
 
     def _open_profiles(self):
         profiles = load_profiles()

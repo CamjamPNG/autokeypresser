@@ -1,0 +1,9 @@
+PackageIdentifier: CamjamPNG.AutoKeyPresser
+PackageVersion: 1.5
+PackageLocale: en-US
+Publisher: CamjamPNG
+PackageName: AutoKeyPresser
+License: MIT
+ShortDescription: Cross-platform keyboard and mouse auto presser
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

@@ -22,7 +22,7 @@ bold = next((f for f in fonts if f.exists()), None)
 title_font = ImageFont.truetype(str(bold), 64) if bold else ImageFont.load_default()
 sub_font = ImageFont.truetype(str(bold), 26) if bold else ImageFont.load_default()
 
-title = "AutoKeyPresser 1.4"
+title = "AutoKeyPresser 1.5"
 sub = "Cross-platform auto presser - keyboard & mouse"
 
 tw = draw.textlength(title, font=title_font)

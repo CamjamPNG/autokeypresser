@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>autokeypresser</id>
+    <version>1.5.0</version>
+    <title>AutoKeyPresser</title>
+    <authors>CamjamPNG</authors>
+    <owners>CamjamPNG</owners>
+    <licenseUrl>https://github.com/CamjamPNG/autokeypresser/blob/master/LICENSE</licenseUrl>
+    <projectUrl>https://github.com/CamjamPNG/autokeypresser</projectUrl>
+    <description>Cross-platform keyboard and mouse auto presser.</description>
+    <tags>autokeypresser autoclicker keyboard mouse automation</tags>
+  </metadata>
+</package>
