@@ -86,6 +86,24 @@ class PressEngineTests(unittest.TestCase):
             thread.join(timeout=2)
         click.assert_called_once_with(100, 200, button="left")
 
+    def test_action_sequence_repeats_as_cycles(self):
+        settings = make_engine(
+            repeat_until_stopped=False,
+            repeat_count=2,
+            interval_seconds=0,
+            actions=[
+                {"input_type": "keyboard", "key": "a", "modifiers": [], "click_type": "single"},
+                {"input_type": "keyboard", "key": "b", "modifiers": [], "click_type": "single"},
+            ],
+        )
+        with mock.patch("autoclicker.engine.pyautogui.press") as press:
+            engine = PressEngine(settings, on_status=lambda _m: None)
+            engine.start()
+            thread = engine._thread
+            thread.join(timeout=2)
+        self.assertEqual(engine.count, 4)
+        self.assertEqual([call.args[0] for call in press.call_args_list], ["a", "b", "a", "b"])
+
 
 if __name__ == "__main__":
     unittest.main()

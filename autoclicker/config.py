@@ -1,8 +1,9 @@
 import json
 from pathlib import Path
 
-CONFIG_DIR = Path.home() / ".op_auto_clicker"
+CONFIG_DIR = Path.home() / ".autokeypresser"
 CONFIG_FILE = CONFIG_DIR / "config.json"
+LEGACY_CONFIG_FILE = Path.home() / ".op_auto_clicker" / "config.json"
 
 DEFAULTS = {
     "input_type": "mouse",
@@ -27,7 +28,8 @@ DEFAULTS = {
 def load_config():
     data = dict(DEFAULTS)
     try:
-        with open(CONFIG_FILE, encoding="utf-8") as fh:
+        path = CONFIG_FILE if CONFIG_FILE.exists() else LEGACY_CONFIG_FILE
+        with open(path, encoding="utf-8") as fh:
             saved = json.load(fh)
         data.update({key: saved[key] for key in data if key in saved})
     except (OSError, ValueError):

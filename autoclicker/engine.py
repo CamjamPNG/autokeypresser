@@ -17,6 +17,7 @@ class PressSettings:
     use_fixed_position: bool = False
     fixed_x: int = 0
     fixed_y: int = 0
+    actions: list = field(default_factory=list)
 
 
 class PressEngine:
@@ -52,32 +53,52 @@ class PressEngine:
                 self.settings.repeat_count, 0
             )
             done = 0
+            cycles = 0
+            actions = self.settings.actions or [self.settings]
             while not self._stop_event.is_set():
-                self._press_once()
-                self.count += 1
-                done += 1
-                self.on_status(("status", self.count))
-                if limit is not None and done >= limit:
+                for action in actions:
+                    if self._stop_event.is_set():
+                        break
+                    self._press_action(action)
+                    self.count += 1
+                    done += 1
+                    self.on_status(("status", self.count))
+                    if self._stop_event.wait(interval):
+                        break
+                cycles += 1
+                if limit is not None and cycles >= limit:
                     break
-                self._stop_event.wait(interval)
         finally:
             self.on_status(("done", self.count))
 
     def _press_once(self):
-        s = self.settings
-        if s.input_type == "mouse":
-            x, y = (s.fixed_x, s.fixed_y) if s.use_fixed_position else pyautogui.position()
-            if s.click_type == "double":
-                pyautogui.click(x, y, clicks=2, interval=0.02, button=s.mouse_button)
-            else:
-                pyautogui.click(x, y, button=s.mouse_button)
+        self._press_action(self.settings)
+
+    def _press_action(self, action):
+        if isinstance(action, PressSettings):
+            value = lambda name, default=None: getattr(action, name, default)
         else:
-            if s.modifiers:
-                pyautogui.hotkey(*s.modifiers, s.key)
+            value = lambda name, default=None: action.get(name, default)
+
+        if value("input_type", "mouse") == "mouse":
+            x, y = (
+                (value("fixed_x", 0), value("fixed_y", 0))
+                if value("use_fixed_position", False)
+                else pyautogui.position()
+            )
+            if value("click_type", "single") == "double":
+                pyautogui.click(x, y, clicks=2, interval=0.02, button=value("mouse_button", "left"))
             else:
-                pyautogui.press(s.key)
-            if s.click_type == "double":
-                if s.modifiers:
-                    pyautogui.hotkey(*s.modifiers, s.key)
+                pyautogui.click(x, y, button=value("mouse_button", "left"))
+        else:
+            modifiers = value("modifiers", [])
+            key = value("key", "a")
+            if modifiers:
+                pyautogui.hotkey(*modifiers, key)
+            else:
+                pyautogui.press(key)
+            if value("click_type", "single") == "double":
+                if modifiers:
+                    pyautogui.hotkey(*modifiers, key)
                 else:
-                    pyautogui.press(s.key)
+                    pyautogui.press(key)

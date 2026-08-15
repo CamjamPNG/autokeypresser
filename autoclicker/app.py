@@ -7,9 +7,10 @@ import webbrowser
 from . import keys as keymod
 from .config import load_config, save_config
 from .engine import PressEngine, PressSettings
+from .profiles import load_profiles, save_profiles
 from . import updater
 
-APP_NAME = "AutoKeyPresser 1.1"
+APP_NAME = "AutoKeyPresser 1.2"
 
 HOTKEY_MODS = [
     "None",
@@ -68,6 +69,7 @@ class AutoClickerApp:
         self.queue = queue.Queue()
         self.engine = None
         self.hotkey_listener = None
+        self.pending_actions = []
 
         self._build_ui()
         self._apply_config()
@@ -208,6 +210,9 @@ class AutoClickerApp:
         tk.Button(bottom, text="Help >>", command=self._open_help).grid(
             row=0, column=2, padx=(4, 0), pady=2
         )
+        tk.Button(bottom, text="Profiles", command=self._open_profiles).grid(
+            row=0, column=3, padx=(4, 0), pady=2
+        )
 
         # --- Status bar ------------------------------------------------------
         self.status_var = tk.StringVar(value="Idle")
@@ -292,6 +297,32 @@ class AutoClickerApp:
         s.fixed_y = int(self.y_var.get() or 0)
         return s
 
+    def _current_action(self):
+        settings = self._collect_settings()
+        return {
+            "input_type": settings.input_type,
+            "mouse_button": settings.mouse_button,
+            "key": settings.key,
+            "modifiers": list(settings.modifiers),
+            "click_type": settings.click_type,
+            "use_fixed_position": settings.use_fixed_position,
+            "fixed_x": settings.fixed_x,
+            "fixed_y": settings.fixed_y,
+        }
+
+    def _apply_action(self, action):
+        self.input_type_var.set("Keyboard" if action.get("input_type") == "keyboard" else "Mouse")
+        self.mouse_button_var.set(action.get("mouse_button", "left").title())
+        self.key_var.set(next((d for d, k in keymod.KEY_MAP if k == action.get("key")), "A"))
+        modifiers = action.get("modifiers", [])
+        for name, var in self.modifier_vars.items():
+            var.set(keymod.os_modifier(name) in modifiers)
+        self.click_type_var.set(action.get("click_type", "single").title())
+        self.cursor_mode_var.set("pick" if action.get("use_fixed_position") else "current")
+        self.x_var.set(str(action.get("fixed_x", 0)))
+        self.y_var.set(str(action.get("fixed_y", 0)))
+        self._refresh_action_fields()
+
     def _toggle(self):
         if self.engine and self.engine.running:
             self._stop()
@@ -307,6 +338,7 @@ class AutoClickerApp:
             messagebox.showerror(APP_NAME, "Please enter valid numbers.")
             return
         self.engine = PressEngine(self.settings, on_status=self.queue.put)
+        self.settings.actions = list(self.pending_actions)
         self.engine.start()
         self._update_running_ui(True)
         self.status_var.set("Running - clicks: 0")
@@ -519,3 +551,83 @@ content you own or are authorized to automate.
         finally:
             self._stop_hotkey_listener()
             self.root.destroy()
+
+    def _open_profiles(self):
+        profiles = load_profiles()
+        win = tk.Toplevel(self.root)
+        win.title("Profiles and sequences")
+        win.resizable(False, False)
+        win.transient(self.root)
+
+        names = tk.StringVar(value=sorted(profiles))
+        tk.Label(win, text="Saved profiles:").grid(row=0, column=0, padx=6, pady=(6, 2), sticky="w")
+        listing = tk.Listbox(win, listvariable=names, height=7, width=28, exportselection=False)
+        listing.grid(row=1, column=0, columnspan=2, padx=6, pady=2)
+        name_var = tk.StringVar()
+        tk.Label(win, text="Name:").grid(row=2, column=0, padx=6, sticky="e")
+        tk.Entry(win, textvariable=name_var, width=24).grid(row=2, column=1, padx=6, pady=4)
+
+        def selected_name():
+            selected = listing.curselection()
+            return listing.get(selected[0]) if selected else name_var.get().strip()
+
+        def refresh():
+            names.set(sorted(profiles))
+
+        def save_current():
+            name = name_var.get().strip()
+            if not name:
+                messagebox.showerror(APP_NAME, "Enter a profile name.", parent=win)
+                return
+            try:
+                action = self._current_action()
+            except ValueError:
+                messagebox.showerror(APP_NAME, "Please enter valid values first.", parent=win)
+                return
+            profiles[name] = {"actions": [action]}
+            save_profiles(profiles)
+            refresh()
+
+        def add_action():
+            name = selected_name()
+            if not name:
+                messagebox.showerror(APP_NAME, "Select or enter a profile name.", parent=win)
+                return
+            try:
+                action = self._current_action()
+            except ValueError:
+                messagebox.showerror(APP_NAME, "Please enter valid values first.", parent=win)
+                return
+            profiles.setdefault(name, {"actions": []}).setdefault("actions", []).append(action)
+            save_profiles(profiles)
+            name_var.set(name)
+            refresh()
+
+        def load_profile(run=False):
+            name = selected_name()
+            profile = profiles.get(name, {})
+            actions = profile.get("actions", [])
+            if not actions:
+                return
+            self._apply_action(actions[0])
+            self.pending_actions = actions if len(actions) > 1 else []
+            if run:
+                self._start()
+
+        def delete_profile():
+            name = selected_name()
+            if name in profiles:
+                del profiles[name]
+                save_profiles(profiles)
+                refresh()
+
+        buttons = tk.Frame(win)
+        buttons.grid(row=3, column=0, columnspan=2, pady=6)
+        for text, command in (
+            ("Save current", save_current),
+            ("Add action", add_action),
+            ("Load", load_profile),
+            ("Run sequence", lambda: load_profile(True)),
+            ("Delete", delete_profile),
+        ):
+            tk.Button(buttons, text=text, command=command).pack(side="left", padx=2)
