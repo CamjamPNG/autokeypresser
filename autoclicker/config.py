@@ -22,6 +22,7 @@ DEFAULTS = {
     "y": "0",
     "hotkey_mod": "None",
     "hotkey_key": "F6",
+    "theme": "Classic Gray",
 }
 
 

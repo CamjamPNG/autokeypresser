@@ -1,5 +1,5 @@
 <p align="center">
-	<img src="img/banner.png" alt="AutoKeyPresser 1.5" />
+	<img src="img/banner.png" alt="AutoKeyPresser 1.6" />
 </p>
 
 <p align="center">
@@ -16,7 +16,7 @@ AutoKeyPresser is an open-source, easy to use, cross-platform auto presser for
 any mouse button, on a classic Windows-style utility interface.
 
 ![Example image](img/example.png)
-*v1.5*
+*v1.6*
 
 [![forthebadge](https://forthebadge.com/images/badges/made-with-python.svg)](https://www.python.org/)
 
@@ -39,6 +39,7 @@ any mouse button, on a classic Windows-style utility interface.
  * F12 emergency stop;
  * Global keyboard/mouse macro recording;
  * Shareable proprietary `.akp` macro files.
+ * Five built-in themes and shareable proprietary `.akpt` theme files.
 
 ### How fast can it press?
 With a 1 millisecond interval it can easily reach hundreds of presses per
@@ -67,6 +68,12 @@ Record keyboard and mouse activity from the **Macros (.akp)** panel. Save the
 recording as an `.akp` file and share it with other AutoKeyPresser users.
 The format includes an AutoKeyPresser signature, version, and checksum, so
 foreign or modified files are rejected instead of being treated as macros.
+
+## Theme Files
+
+Choose Classic Gray, Midnight, Ocean, Forest, or Sunset from the Theme panel.
+Export a theme as `.akpt` and share it with other AutoKeyPresser users. See
+[`THEMING.md`](THEMING.md) for the complete custom-theme format.
 
 ## Permissions
 

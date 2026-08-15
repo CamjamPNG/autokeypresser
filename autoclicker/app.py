@@ -8,11 +8,11 @@ import webbrowser
 from . import keys as keymod
 from .config import load_config, save_config
 from .engine import PressEngine, PressSettings
-from . import macro
+from . import macro, themes
 from .profiles import load_profiles, save_profiles
 from . import updater
 
-APP_NAME = "AutoKeyPresser 1.5"
+APP_NAME = "AutoKeyPresser 1.6"
 
 HOTKEY_MODS = [
     "None",
@@ -75,6 +75,7 @@ class AutoClickerApp:
         self.recorder = None
         self.last_macro = []
         self.macro_player = None
+        self.current_theme = themes.make_theme("Classic Gray")
 
         self._build_ui()
         self._apply_config()
@@ -82,6 +83,8 @@ class AutoClickerApp:
         self._update_hotkey_label()
         self._start_hotkey_listener()
         self._load_macro_from_args()
+        self._load_theme_from_args()
+        self._apply_theme(self.config.get("theme", "Classic Gray"))
 
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.root.after(80, self._poll_queue)
@@ -251,9 +254,26 @@ class AutoClickerApp:
             row=0, column=5, padx=(6, 0), sticky="w"
         )
 
+        # --- Themes ----------------------------------------------------------
+        theme_frame = tk.LabelFrame(root, text="Theme (.akpt)", padx=6, pady=3)
+        theme_frame.grid(row=5, column=0, columnspan=3, padx=6, pady=3, sticky="we")
+        self.theme_var = tk.StringVar(value="Classic Gray")
+        tk.OptionMenu(theme_frame, self.theme_var, *themes.theme_names()).grid(
+            row=0, column=0, padx=2, pady=2
+        )
+        tk.Button(theme_frame, text="Apply", command=self._apply_selected_theme).grid(
+            row=0, column=1, padx=2
+        )
+        tk.Button(theme_frame, text="Import...", command=self._import_theme).grid(
+            row=0, column=2, padx=2
+        )
+        tk.Button(theme_frame, text="Export...", command=self._export_theme).grid(
+            row=0, column=3, padx=2
+        )
+
         # --- Bottom buttons -------------------------------------------------
         bottom = tk.Frame(root)
-        bottom.grid(row=5, column=0, columnspan=3, padx=6, pady=(4, 4), sticky="we")
+        bottom.grid(row=6, column=0, columnspan=3, padx=6, pady=(4, 4), sticky="we")
         bottom.columnconfigure(1, weight=1)
 
         tk.Button(bottom, text="Hotkey setting", command=self._open_hotkey_settings).grid(
@@ -273,7 +293,7 @@ class AutoClickerApp:
         tk.Label(
             root, textvariable=self.status_var, anchor="w",
             relief=tk.SUNKEN, bd=1,
-        ).grid(row=6, column=0, columnspan=3, sticky="we", padx=6, pady=(0, 6))
+        ).grid(row=7, column=0, columnspan=3, sticky="we", padx=6, pady=(0, 6))
 
     # ---------------------------------------------------------------- config
     def _apply_config(self):
@@ -301,6 +321,7 @@ class AutoClickerApp:
         self.randomize_var.set(c.get("randomize_interval", False))
         self.random_min_var.set(str(c.get("random_min_ms", "50")))
         self.random_max_var.set(str(c.get("random_max_ms", "150")))
+        self.theme_var.set(c.get("theme", "Classic Gray"))
 
     def _collect_config(self):
         c = self.config
@@ -323,6 +344,7 @@ class AutoClickerApp:
         c["randomize_interval"] = self.randomize_var.get()
         c["random_min_ms"] = self.random_min_var.get()
         c["random_max_ms"] = self.random_max_var.get()
+        c["theme"] = self.theme_var.get()
         return c
 
     # ------------------------------------------------------------- behaviors
@@ -661,6 +683,16 @@ content you own or are authorized to automate.
                 self._load_macro(argument)
                 break
 
+    def _load_theme_from_args(self):
+        for argument in sys.argv[1:]:
+            if argument.lower().endswith(".akpt"):
+                try:
+                    self.current_theme = themes.load_theme(argument)
+                    self.theme_var.set(self.current_theme["name"])
+                except (OSError, ValueError):
+                    pass
+                break
+
     def _toggle_record(self):
         if self.recorder and self.recorder.recording:
             self._stop_record()
@@ -738,6 +770,80 @@ content you own or are authorized to automate.
             "Loaded %s (%d actions)" % (payload.get("name", "macro"), len(self.last_macro))
         )
         self.play_macro_button.config(text="Play")
+
+    # ---------------------------------------------------------------- themes
+    def _apply_theme(self, name):
+        try:
+            theme = themes.make_theme(name)
+        except KeyError:
+            try:
+                theme = themes.load_user_theme(name)
+            except (OSError, ValueError):
+                theme = self.current_theme
+        self.current_theme = theme
+        colors = theme["colors"]
+        self.root.configure(bg=colors["window"])
+        self._style_widget_tree(self.root, colors)
+
+    def _style_widget_tree(self, widget, colors):
+        kind = widget.winfo_class()
+        options = {"bg": colors["panel"], "fg": colors["text"]}
+        if kind in {"Entry", "Spinbox", "Listbox", "Text", "Menubutton"}:
+            options.update({"bg": colors["input"], "fg": colors["text"]})
+        if kind in {"Button", "Menubutton"}:
+            options.update({
+                "activebackground": colors["accent"],
+                "activeforeground": colors["accent_text"],
+            })
+        if kind == "LabelFrame":
+            options["highlightbackground"] = colors["border"]
+        try:
+            widget.configure(**options)
+        except tk.TclError:
+            pass
+        for child in widget.winfo_children():
+            self._style_widget_tree(child, colors)
+
+    def _apply_selected_theme(self):
+        self._apply_theme(self.theme_var.get())
+        self.config["theme"] = self.theme_var.get()
+        save_config(self.config)
+
+    def _import_theme(self):
+        path = filedialog.askopenfilename(
+            filetypes=[("AutoKeyPresser Theme", "*.akpt"), ("All files", "*.*")]
+        )
+        if not path:
+            return
+        try:
+            theme = themes.load_theme(path)
+            saved = themes.save_user_theme(theme)
+        except (OSError, ValueError) as exc:
+            messagebox.showerror(APP_NAME, "Could not import theme:\n%s" % exc)
+            return
+        self.current_theme = theme
+        self.theme_var.set(theme["name"])
+        self._apply_theme_data(theme)
+        self.config["theme"] = theme["name"]
+        save_config(self.config)
+        self.status_var.set("Theme imported: %s" % saved.name)
+
+    def _export_theme(self):
+        path = filedialog.asksaveasfilename(
+            defaultextension=".akpt",
+            filetypes=[("AutoKeyPresser Theme", "*.akpt")],
+        )
+        if path:
+            try:
+                themes.save_theme(self.current_theme, path)
+                self.status_var.set("Theme exported")
+            except OSError as exc:
+                messagebox.showerror(APP_NAME, "Could not export theme:\n%s" % exc)
+
+    def _apply_theme_data(self, theme):
+        self.current_theme = themes.validate_theme(theme)
+        self.root.configure(bg=self.current_theme["colors"]["window"])
+        self._style_widget_tree(self.root, self.current_theme["colors"])
 
     def _open_profiles(self):
         profiles = load_profiles()
