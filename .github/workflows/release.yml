@@ -39,15 +39,20 @@ jobs:
           python -m PyInstaller --noconfirm --onefile --windowed --icon img/icon.ico --name AutoKeyPresser main.py
           Compress-Archive -Path dist/AutoKeyPresser.exe -DestinationPath dist/AutoKeyPresser-Portable.zip -Force
           choco install innosetup --no-progress -y
-          $iscc = "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
-          if (-not (Test-Path $iscc)) { $iscc = "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" }
+          $candidates = @(
+            "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
+          )
+          $iscc = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) { throw "Inno Setup compiler was not found" }
           & $iscc installer.iss
       - name: Build Linux artifacts
         if: runner.os == 'Linux'
-        run: xvfb-run -a ./build_linux.sh
+        run: xvfb-run -a bash build_linux.sh
       - name: Build macOS artifacts
         if: runner.os == 'macOS'
-        run: ./build_macos.sh
+        run: bash build_macos.sh
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
