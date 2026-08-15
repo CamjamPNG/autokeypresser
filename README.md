@@ -60,16 +60,34 @@ Press **Start** or the global hotkey to begin; press it again to stop.
 | Linux | Requires an X11 session (no Wayland input injection). |
 | macOS | Grant the app **Accessibility** and **Input Monitoring** permissions in System Settings → Privacy & Security. |
 
+## Downloads
+
+Every release ships both a **portable** and an **installer** version for each
+platform:
+
+| Platform | Portable | Installer |
+| --- | --- | --- |
+| Windows | `OPAutoClicker-Portable.zip` (extract & run) | `OPAutoClicker-Setup.exe` (Inno Setup) |
+| Linux | `OPAutoClicker-Portable-linux.tar.gz` | `OPAutoClicker-Linux.deb` / `OPAutoClicker-Linux.AppImage` |
+| macOS | `OPAutoClicker-Portable-macos.zip` (.app) | `OPAutoClicker-macOS.dmg` |
+
 ## Building
 
 After cloning the repository, install PyInstaller and run the build script
-for your platform. The executable will be placed in **./dist/**.
+for your platform. The artifacts will be placed in **./dist/**.
 
 ```
 pip install pyinstaller
-build.bat        # Windows
-./build.sh       # Linux / macOS
+build.bat           # Windows: portable exe + portable zip + Inno Setup installer
+./build_linux.sh    # Linux:   portable tarball + .deb + AppImage (if tooling present)
+./build_macos.sh    # macOS:   .app + portable zip + .dmg
 ```
+
+- The **Windows installer** requires [Inno Setup 6](https://jrsoftware.org/isinfo.php)
+  (`winget install -e --id JRSoftware.InnoSetup`).
+- The **Linux .deb** needs `dpkg-deb`; the **AppImage** needs `appimagetool`.
+- The **macOS .dmg** needs `hdiutil` (bundled with macOS).
+
 
 ## Safety
 A 0 ms interval produces a very fast stream of presses. Use the **Stop**
