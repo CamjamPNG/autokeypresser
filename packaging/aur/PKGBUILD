@@ -1,5 +1,5 @@
 pkgname=autokeypresser
-pkgver=1.5
+pkgver=1.6
 pkgrel=1
 pkgdesc='Cross-platform keyboard and mouse auto presser'
 arch=('x86_64')

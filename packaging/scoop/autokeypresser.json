@@ -1,9 +1,9 @@
 {
-  "version": "1.5",
+  "version": "1.6",
   "description": "Cross-platform keyboard and mouse auto presser",
   "homepage": "https://github.com/CamjamPNG/autokeypresser",
   "license": "MIT",
-  "url": "https://github.com/CamjamPNG/autokeypresser/releases/download/v1.5/AutoKeyPresser-Portable.zip",
+  "url": "https://github.com/CamjamPNG/autokeypresser/releases/download/v1.6/AutoKeyPresser-Portable.zip",
   "hash": "REPLACE_WITH_RELEASE_SHA256",
   "bin": "AutoKeyPresser.exe",
   "shortcuts": [["AutoKeyPresser.exe", "AutoKeyPresser"]],
