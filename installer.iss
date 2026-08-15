@@ -1,14 +1,14 @@
-; Inno Setup script - builds the OPAutoClicker Windows installer.
+; Inno Setup script - builds the AutoKeyPresser Windows installer.
 ; Compile with:  ISCC.exe installer.iss
 
-#define MyAppName "OP Auto Clicker"
-#define MyAppVersion "2.1"
+#define MyAppName "AutoKeyPresser"
+#define MyAppVersion "1.0"
 #define MyAppPublisher "CamjamPNG"
-#define MyAppExeName "OPAutoClicker.exe"
-#define MyAppURL "https://github.com/CamjamPNG/op-auto-clicker"
+#define MyAppExeName "AutoKeyPresser.exe"
+#define MyAppURL "https://github.com/CamjamPNG/autokeypresser"
 
 [Setup]
-AppId={{8E4A9C2F-4B6E-4A9D-9C1E-3F5D2A7B1C0E}
+AppId={{B3F6D1C8-0D2A-4A6F-9D5B-7C2E8A1F4B90}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
@@ -18,7 +18,7 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=dist
-OutputBaseFilename=OPAutoClicker-Setup
+OutputBaseFilename=AutoKeyPresser-Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

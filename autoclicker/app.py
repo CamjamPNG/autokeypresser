@@ -6,7 +6,7 @@ from . import keys as keymod
 from .config import load_config, save_config
 from .engine import PressEngine, PressSettings
 
-APP_NAME = "OP Auto Clicker 2.1"
+APP_NAME = "AutoKeyPresser 1.0"
 
 HOTKEY_MODS = [
     "None",
@@ -47,7 +47,7 @@ def build_hotkey(mod, key):
         parts.extend("<%s>" % m.strip().lower() for m in mod.split("+"))
     if key in _PYNPUT_SPECIAL:
         parts.append(_PYNPUT_SPECIAL[key])
-    elif len(key) == 2 and key[0] == "F" and key[1].isdigit():
+    elif key.startswith("F") and key[1:].isdigit():
         parts.append("<%s>" % key.lower())
     else:
         parts.append(key.lower())
@@ -312,7 +312,10 @@ class AutoClickerApp:
             self.engine.stop()
 
     def _update_running_ui(self, running):
-        self.start_button.config(text="Stop" if running else "Start")
+        if running:
+            self.start_button.config(text="Stop")
+        else:
+            self._update_hotkey_label()
 
     def _poll_queue(self):
         try:
@@ -322,17 +325,17 @@ class AutoClickerApp:
                     self.status_var.set("Running - clicks: %d" % value)
                 elif msg == "done":
                     self.status_var.set("Stopped - clicks: %d" % value)
-                    self.start_button.config(text="Start")
+                    self._update_running_ui(False)
         except queue.Empty:
             pass
         self.root.after(80, self._poll_queue)
 
     # ----------------------------------------------------------------- hotkey
     def _start_hotkey_listener(self):
-        from pynput import keyboard
-
-        combo = build_hotkey(self.config["hotkey_mod"], self.config["hotkey_key"])
         try:
+            from pynput import keyboard
+
+            combo = build_hotkey(self.config["hotkey_mod"], self.config["hotkey_key"])
             self.hotkey_listener = keyboard.GlobalHotKeys({combo: self._toggle})
             self.hotkey_listener.start()
         except Exception as exc:
@@ -453,7 +456,11 @@ content you own or are authorized to automate.
     def _on_close(self):
         try:
             self._stop()
-            save_config(self._collect_config())
+            try:
+                save_config(self._collect_config())
+            except ValueError:
+                # Do not block shutdown because a field contains invalid text.
+                pass
         finally:
             self._stop_hotkey_listener()
             self.root.destroy()

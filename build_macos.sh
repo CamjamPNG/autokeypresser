@@ -4,14 +4,25 @@
 set -e
 cd "$(dirname "$0")"
 
-python3 -m PyInstaller --noconfirm --windowed --onedir --icon img/icon.icns --name "OPAutoClicker" main.py || {
-    echo "If img/icon.icns does not exist yet, create it from img/icon.png with:";
-    echo "  iconutil -c icns <iconset>"; exit 1;
-}
+ICON_ARGS=()
+if command -v sips >/dev/null 2>&1 && command -v iconutil >/dev/null 2>&1; then
+    ICONSET=dist/AutoKeyPresser.iconset
+    rm -rf "$ICONSET" dist/AutoKeyPresser.icns
+    mkdir -p "$ICONSET"
+    for size in 16 32 128 256 512; do
+        sips -z "$size" "$size" img/icon.png --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
+        double=$((size * 2))
+        sips -z "$double" "$double" img/icon.png --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
+    done
+    iconutil -c icns "$ICONSET" -o dist/AutoKeyPresser.icns
+    ICON_ARGS=(--icon dist/AutoKeyPresser.icns)
+fi
+
+python3 -m PyInstaller --noconfirm --windowed --onedir "${ICON_ARGS[@]}" --name "AutoKeyPresser" main.py
 
 # --- Portable .app zip -------------------------------------------------------
-APP=dist/OPAutoClicker.app
-ditto -c -k --keepParent "$APP" dist/OPAutoClicker-Portable-macos.zip
+APP=dist/AutoKeyPresser.app
+ditto -c -k --keepParent "$APP" dist/AutoKeyPresser-Portable-macos.zip
 
 # --- .dmg installer (requires hdiutil) ---------------------------------------
 if command -v hdiutil >/dev/null 2>&1; then
@@ -20,8 +31,8 @@ if command -v hdiutil >/dev/null 2>&1; then
     mkdir -p "$STAGE"
     cp -R "$APP" "$STAGE/"
     ln -s /Applications "$STAGE/Applications"
-    hdiutil create -volname "OP Auto Clicker" -srcfolder "$STAGE" \
-        -ov -format UDZO dist/OPAutoClicker-macOS.dmg
+    hdiutil create -volname "AutoKeyPresser" -srcfolder "$STAGE" \
+        -ov -format UDZO dist/AutoKeyPresser-macOS.dmg
 fi
 
-echo "Built dist/OPAutoClicker.app, dist/OPAutoClicker-Portable-macos.zip, dist/OPAutoClicker-macOS.dmg"
+echo "Built dist/AutoKeyPresser.app, dist/AutoKeyPresser-Portable-macos.zip, dist/AutoKeyPresser-macOS.dmg"

@@ -30,6 +30,9 @@ class HotkeyBuilderTests(unittest.TestCase):
     def test_plain_f_key(self):
         self.assertEqual(build_hotkey("None", "F6"), "<f6>")
 
+    def test_two_digit_f_key(self):
+        self.assertEqual(build_hotkey("None", "F12"), "<f12>")
+
     def test_special_key(self):
         self.assertEqual(build_hotkey("None", "Page Up"), "<page_up>")
 

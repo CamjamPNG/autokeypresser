@@ -1,5 +1,5 @@
 <p align="center">
-	<img src="img/banner.png" alt="OP Auto Clicker 2.1" />
+	<img src="img/banner.png" alt="AutoKeyPresser 1.0" />
 </p>
 
 <p align="center">
@@ -9,15 +9,15 @@
 	<img alt="Dependencies" src="https://img.shields.io/badge/dependencies-2-brightgreen" />
 </p>
 
-## What is OPAutoClicker?
-OP Auto Clicker is an open-source, easy to use, cross-platform auto presser for
+## What is AutoKeyPresser?
+AutoKeyPresser is an open-source, easy to use, cross-platform auto presser for
 **Windows, Linux and macOS**. It can automatically press any keyboard key and
 any mouse button, on a classic Windows-style utility interface.
 
 ![Example image](img/example.png)
-*v2.1*
+*v1.0*
 
-[![forthebadge](https://forthebadge.com/images/badges/made-with-python.svg)](https://www.python.org/) [![forthebadge](https://forthebadge.com/images/badges/60-percent-of-the-time-works-every-time.svg)]()
+[![forthebadge](https://forthebadge.com/images/badges/made-with-python.svg)](https://www.python.org/)
 
 ## Main features
  * Fairly simple, compact layout;
@@ -67,9 +67,9 @@ platform:
 
 | Platform | Portable | Installer |
 | --- | --- | --- |
-| Windows | `OPAutoClicker-Portable.zip` (extract & run) | `OPAutoClicker-Setup.exe` (Inno Setup) |
-| Linux | `OPAutoClicker-Portable-linux.tar.gz` | `OPAutoClicker-Linux.deb` / `OPAutoClicker-Linux.AppImage` |
-| macOS | `OPAutoClicker-Portable-macos.zip` (.app) | `OPAutoClicker-macOS.dmg` |
+| Windows | `AutoKeyPresser-Portable.zip` (extract & run) | `AutoKeyPresser-Setup.exe` (Inno Setup) |
+| Linux | `AutoKeyPresser-Portable-linux.tar.gz` | `AutoKeyPresser-Linux.deb` / `AutoKeyPresser-Linux.AppImage` |
+| macOS | `AutoKeyPresser-Portable-macos.zip` (.app) | `AutoKeyPresser-macOS.dmg` |
 
 ## Building
 

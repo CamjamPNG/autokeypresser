@@ -4,10 +4,13 @@ REM Requires: pyinstaller (pip install pyinstaller) and Inno Setup 6.
 
 setlocal
 
-pyinstaller --noconfirm --onefile --windowed --icon img\icon.ico --name "OPAutoClicker" main.py || exit /b 1
+set "PYTHON=python"
+if exist ".venv\Scripts\python.exe" set "PYTHON=.venv\Scripts\python.exe"
+
+"%PYTHON%" -m PyInstaller --noconfirm --onefile --windowed --icon img\icon.ico --name "AutoKeyPresser" main.py || exit /b 1
 
 REM Portable zip
-powershell -NoProfile -Command "Compress-Archive -Path 'dist\OPAutoClicker.exe' -DestinationPath 'dist\OPAutoClicker-Portable.zip' -Force"
+powershell -NoProfile -Command "Compress-Archive -Path 'dist\AutoKeyPresser.exe' -DestinationPath 'dist\AutoKeyPresser-Portable.zip' -Force"
 
 REM Installer
 set "ISCC=%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"
@@ -21,6 +24,6 @@ if exist "%ISCC%" (
 
 echo.
 echo Built:
-echo   dist\OPAutoClicker.exe        (portable executable)
-echo   dist\OPAutoClicker-Portable.zip
-echo   dist\OPAutoClicker-Setup.exe  (installer)
+echo   dist\AutoKeyPresser.exe        (portable executable)
+echo   dist\AutoKeyPresser-Portable.zip
+echo   dist\AutoKeyPresser-Setup.exe  (installer)
