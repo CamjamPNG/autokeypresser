@@ -1,4 +1,5 @@
 import time
+import os
 from pathlib import Path
 
 import tkinter as tk
@@ -15,6 +16,7 @@ out.mkdir(exist_ok=True)
 
 root = tk.Tk()
 app = AutoClickerApp(root)
+app._apply_theme(os.environ.get("AKP_SCREENSHOT_THEME", "Aurora"))
 root.update()
 root.lift()
 root.attributes("-topmost", True)
@@ -26,7 +28,7 @@ root.update()
 
 x, y = root.winfo_rootx(), root.winfo_rooty()
 w, h = root.winfo_width(), root.winfo_height()
-img = ImageGrab.grab(bbox=(x - 2, y - 2, x + w + 2, y + h + 2))
+img = ImageGrab.grab(bbox=(x, y, x + w, y + h))
 img.save(out / "example.png")
 print("saved", out / "example.png", img.size)
 

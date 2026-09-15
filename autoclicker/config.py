@@ -20,9 +20,14 @@ DEFAULTS = {
     "use_fixed_position": False,
     "x": "0",
     "y": "0",
+    "hold_mode": False,
+    "hold_duration_ms": "50",
+    "randomize_interval": False,
+    "random_min_ms": "50",
+    "random_max_ms": "150",
     "hotkey_mod": "None",
     "hotkey_key": "F6",
-    "theme": "Classic Gray",
+    "theme": "Aurora",
 }
 
 

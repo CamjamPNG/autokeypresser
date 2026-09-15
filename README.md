@@ -12,16 +12,16 @@
 
 ## What is AutoKeyPresser?
 AutoKeyPresser is an open-source, easy to use, cross-platform auto presser for
-**Windows, Linux and macOS**. It can automatically press any keyboard key and
-any mouse button, on a classic Windows-style utility interface.
+**Windows, Linux and macOS**. It can automatically press any keyboard key or
+mouse button from a modern, focused desktop workspace.
 
-![Example image](img/example.png)
-*v1.6*
+![AutoKeyPresser modern desktop interface](img/example.png)
+*The v1.6 automation workspace in the Aurora theme.*
 
 [![forthebadge](https://forthebadge.com/images/badges/made-with-python.svg)](https://www.python.org/)
 
 ## Main features
- * Fairly simple, compact layout;
+ * Modern, responsive interface with a live run-plan summary;
  * Press any keyboard key, with or without modifiers [Ctrl/Shift/Alt/Win];
  * Autoclick with a specified amount of time between each press
    [hours/mins/secs/milliseconds];
@@ -39,7 +39,7 @@ any mouse button, on a classic Windows-style utility interface.
  * F12 emergency stop;
  * Global keyboard/mouse macro recording;
  * Shareable proprietary `.akp` macro files.
- * Five built-in themes and shareable proprietary `.akpt` theme files.
+ * Six built-in themes and shareable proprietary `.akpt` theme files.
 
 ### How fast can it press?
 With a 1 millisecond interval it can easily reach hundreds of presses per
@@ -71,7 +71,7 @@ foreign or modified files are rejected instead of being treated as macros.
 
 ## Theme Files
 
-Choose Classic Gray, Midnight, Ocean, Forest, or Sunset from the Theme panel.
+Choose Aurora, Classic Gray, Midnight, Ocean, Forest, or Sunset from Appearance.
 Export a theme as `.akpt` and share it with other AutoKeyPresser users. See
 [`THEMING.md`](THEMING.md) for the complete custom-theme format.
 

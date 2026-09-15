@@ -1,6 +1,6 @@
 # AutoKeyPresser Themes
 
-AutoKeyPresser 1.6 includes five built-in themes and supports shareable
+AutoKeyPresser 1.6 includes six built-in themes and supports shareable
 `.akpt` theme files.
 
 ## Built-In Themes
@@ -10,8 +10,9 @@ AutoKeyPresser 1.6 includes five built-in themes and supports shareable
 - Ocean
 - Forest
 - Sunset
+- Aurora
 
-Select a theme from the **Theme (.akpt)** panel and press **Apply**.
+Select a theme from **Appearance** for an instant live preview.
 
 ## Custom Theme Format
 
@@ -29,16 +30,17 @@ The payload uses this shape:
   "name": "My Theme",
   "author": "Your name",
   "colors": {
-    "window": "#202124",
-    "panel": "#292a2d",
-    "input": "#17181a",
-    "text": "#f5f7fa",
-    "muted_text": "#b8bcc4",
-    "accent": "#4ea1ff",
+    "window": "#0b0d12",
+    "panel": "#14171e",
+    "input": "#0f1218",
+    "text": "#f5f7fb",
+    "muted_text": "#929bad",
+    "accent": "#64a8ff",
     "accent_text": "#ffffff",
-    "border": "#555a64",
-    "disabled": "#3a3d42",
-    "danger": "#ff6b6b"
+    "border": "#282d38",
+    "disabled": "#4c5362",
+    "danger": "#ff6673",
+    "success": "#45d09e"
   },
   "font": {
     "family": "TkDefaultFont",
@@ -47,7 +49,7 @@ The payload uses this shape:
 }
 ```
 
-Colors must be six-digit hexadecimal values such as `#4ea1ff`. Font sizes
+Colors must be six-digit hexadecimal values such as `#64a8ff`. Font sizes
 must be between 6 and 32. Use **Export...** to create a correctly signed file;
 do not edit the binary file manually.
 
