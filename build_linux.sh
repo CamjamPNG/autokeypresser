@@ -28,7 +28,7 @@ EOF
     mkdir -p "$PKG/DEBIAN"
     cat > "$PKG/DEBIAN/control" <<EOF
 Package: autokeypresser
-Version: 1.0
+Version: 2.0
 Section: utils
 Priority: optional
 Architecture: amd64

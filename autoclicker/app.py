@@ -12,7 +12,7 @@ from . import macro, themes
 from .profiles import load_profiles, save_profiles
 from . import updater
 
-APP_NAME = "AutoKeyPresser 1.6"
+APP_NAME = "AutoKeyPresser 2.0"
 
 
 def _mix_color(color, other, amount):
@@ -702,7 +702,7 @@ class AutoClickerApp:
         ttk.Label(footer, textvariable=self.status_var, style="Muted.TLabel").grid(
             row=0, column=1, sticky="w"
         )
-        ttk.Label(footer, text="v1.6  •  local by design", style="Quiet.TLabel").grid(
+        ttk.Label(footer, text="v2.0  •  local by design", style="Quiet.TLabel").grid(
             row=0, column=2, sticky="e"
         )
 

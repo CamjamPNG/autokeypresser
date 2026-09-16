@@ -1,6 +1,6 @@
 # AutoKeyPresser Themes
 
-AutoKeyPresser 1.6 includes six built-in themes and supports shareable
+AutoKeyPresser 2.0 includes six built-in themes and supports shareable
 `.akpt` theme files.
 
 ## Built-In Themes

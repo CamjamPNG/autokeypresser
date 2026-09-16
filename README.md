@@ -1,5 +1,5 @@
 <p align="center">
-	<img src="img/banner.png" alt="AutoKeyPresser 1.6" />
+	<img src="img/banner.png" alt="AutoKeyPresser 2.0" />
 </p>
 
 <p align="center">
@@ -16,7 +16,7 @@ AutoKeyPresser is an open-source, easy to use, cross-platform auto presser for
 mouse button from a modern, focused desktop workspace.
 
 ![AutoKeyPresser modern desktop interface](img/example.png)
-*The v1.6 automation workspace in the Aurora theme.*
+*The v2.0 automation workspace in the Aurora theme.*
 
 [![forthebadge](https://forthebadge.com/images/badges/made-with-python.svg)](https://www.python.org/)
 

@@ -58,8 +58,9 @@ class SettingsTests(unittest.TestCase):
 
 class UpdaterTests(unittest.TestCase):
     def test_version_comparison(self):
-        self.assertTrue(updater.is_newer("v1.7"))
-        self.assertFalse(updater.is_newer("v1.6"))
+        self.assertTrue(updater.is_newer("v2.1"))
+        self.assertFalse(updater.is_newer("v2.0"))
+        self.assertFalse(updater.is_newer("v1.9"))
         self.assertFalse(updater.is_newer("not-a-version"))
 
     def test_windows_installer_asset(self):
