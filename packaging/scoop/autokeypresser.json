@@ -4,7 +4,7 @@
   "homepage": "https://github.com/CamjamPNG/autokeypresser",
   "license": "MIT",
   "url": "https://github.com/CamjamPNG/autokeypresser/releases/download/v2.0/AutoKeyPresser-Portable.zip",
-  "hash": "REPLACE_WITH_RELEASE_SHA256",
+  "hash": "1a8ac71c6d67220b96088f5cab41e7a36fc0b4e76958753aee947a2b9c3c45f5",
   "bin": "AutoKeyPresser.exe",
   "shortcuts": [["AutoKeyPresser.exe", "AutoKeyPresser"]],
   "checkver": "github",
