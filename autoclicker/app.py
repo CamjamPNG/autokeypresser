@@ -1821,6 +1821,9 @@ class AutoClickerApp:
             # Playback only needs the repeat rules, so a Text action still being
             # typed must not block a recording the player already holds.
             settings = self._collect_settings(validate_text=False)
+        except InvalidSettings as exc:
+            messagebox.showerror(APP_NAME, str(exc))
+            return
         except ValueError:
             messagebox.showerror(APP_NAME, "Please enter valid repeat values first.")
             return
