@@ -2,9 +2,11 @@ import json
 import pathlib
 import shutil
 import tempfile
+import tkinter as tk
 import unittest
 from unittest import mock
 
+from autoclicker import app as app_module
 from autoclicker import config as config_module
 from autoclicker import keys
 from autoclicker import profiles as profiles_module
@@ -204,6 +206,48 @@ class ConfigTextTests(unittest.TestCase):
 
     def test_defaults_carry_an_empty_text_field(self):
         self.assertEqual(config_module.DEFAULTS["text"], "")
+
+
+class MacroPlaybackTests(unittest.TestCase):
+    """Playback needs only the repeat rules, and names a range that cannot work."""
+
+    def setUp(self):
+        try:
+            self.root = tk.Tk()
+        except tk.TclError as exc:
+            self.skipTest("Tk display unavailable: %s" % exc)
+        self.addCleanup(self.root.destroy)
+        with mock.patch.object(app_module.AutoClickerApp, "_start_hotkey_listener"), \
+             mock.patch.object(app_module.AutoClickerApp, "_check_for_updates"):
+            self.app = app_module.AutoClickerApp(self.root)
+        self.app.last_macro = [{"kind": "key", "key": "a", "action": "press", "at": 0.0}]
+
+    def test_random_range_conflict_blocks_playback_with_its_own_message(self):
+        self.app.input_type_var.set("Text")
+        self.app.randomize_var.set(True)
+        self.app.random_min_var.set("300")
+        self.app.random_max_var.set("100")
+
+        with mock.patch.object(app_module, "messagebox") as box, \
+             mock.patch.object(app_module.macro, "MacroPlayer") as player:
+            self.app._play_macro()
+
+        self.assertEqual(
+            box.showerror.call_args.args[1],
+            "Random maximum must not be lower than minimum.",
+        )
+        player.assert_not_called()
+
+    def test_playback_ignores_an_unfinished_text_entry(self):
+        self.app.input_type_var.set("Text")
+        self.app.text_var.set("")
+
+        with mock.patch.object(app_module, "messagebox") as box, \
+             mock.patch.object(app_module.macro, "MacroPlayer") as player:
+            self.app._play_macro()
+
+        box.showerror.assert_not_called()
+        player.assert_called_once()
 
 
 class VersionTests(unittest.TestCase):
