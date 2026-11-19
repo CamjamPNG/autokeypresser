@@ -9,6 +9,7 @@ DEFAULTS = {
     "input_type": "mouse",
     "mouse_button": "left",
     "key": "a",
+    "text": "",
     "modifiers": [],
     "click_type": "single",
     "repeat_until_stopped": True,

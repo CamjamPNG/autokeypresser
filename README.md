@@ -23,6 +23,7 @@ mouse button from a modern, focused desktop workspace.
 ## Main features
  * Modern, responsive interface with a live run-plan summary;
  * Press any keyboard key, with or without modifiers [Ctrl/Shift/Alt/Win];
+ * Type a whole line of printable text as one action;
  * Autoclick with a specified amount of time between each press
    [hours/mins/secs/milliseconds];
  * Choose mouse button [Left/Right/Middle];

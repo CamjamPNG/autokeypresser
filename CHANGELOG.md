@@ -9,7 +9,13 @@ published GitHub release notes and the repository history.
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- Text mode beside Mouse and Keyboard in the Action card. A whole printable string is
+  sent through `pyautogui.write` as one action, so typing a sentence, a URL, or a
+  command line is a single step instead of one key press per character. Text actions
+  are stored as an optional `"text"` field in profiles and saved settings, so existing
+  profiles and configuration files load unchanged.
 
 ## [2.0] - 2026-09-16
 
