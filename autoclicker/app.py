@@ -1368,13 +1368,15 @@ class AutoClickerApp:
         self.cursor_mode_var.set("pick")
         self._refresh_cursor_fields()
 
-    def _collect_settings(self):
+    def _collect_settings(self, validate_text=True):
         s = self.settings
         s.input_type = input_type_for(self.input_type_var.get())
-        if s.input_type == "text":
+        if s.input_type != "text":
+            s.text = ""
+        elif validate_text:
             s.text = checked_text(self.text_var.get())
         else:
-            s.text = ""
+            s.text = self.text_var.get()
         s.mouse_button = self.mouse_button_var.get().lower()
         s.key = keymod.display_to_key(self.key_var.get())
         s.modifiers = [keymod.os_modifier(n) for n, v in self.modifier_vars.items() if v.get()]
@@ -1816,10 +1818,9 @@ class AutoClickerApp:
             messagebox.showwarning(APP_NAME, "Record or load a macro first.")
             return
         try:
-            settings = self._collect_settings()
-        except InvalidSettings as exc:
-            messagebox.showerror(APP_NAME, str(exc))
-            return
+            # Playback only needs the repeat rules, so a Text action still being
+            # typed must not block a recording the player already holds.
+            settings = self._collect_settings(validate_text=False)
         except ValueError:
             messagebox.showerror(APP_NAME, "Please enter valid repeat values first.")
             return
