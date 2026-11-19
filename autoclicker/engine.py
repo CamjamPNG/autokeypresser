@@ -8,9 +8,10 @@ import pyautogui
 
 @dataclass
 class PressSettings:
-    input_type: str = "mouse"  # "mouse" | "keyboard"
+    input_type: str = "mouse"  # "mouse" | "keyboard" | "text"
     mouse_button: str = "left"  # left / right / middle
     key: str = "a"
+    text: str = ""
     modifiers: list = field(default_factory=list)  # pyautogui modifier names
     click_type: str = "single"  # single / double
     repeat_count: int = 1
@@ -89,6 +90,12 @@ class PressEngine:
             value = lambda name, default=None: getattr(action, name, default)
         else:
             value = lambda name, default=None: action.get(name, default)
+
+        if value("input_type", "mouse") == "text":
+            # pyautogui.write sends the whole string in one call, so one text
+            # action costs exactly one interval.
+            pyautogui.write(value("text", ""))
+            return
 
         hold = value("hold_mode", False)
         hold_duration = max(float(value("hold_duration_seconds", 0.05)), 0.001)

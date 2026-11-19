@@ -117,6 +117,70 @@ class PressEngineTests(unittest.TestCase):
         self.assertEqual(engine.count, 4)
         self.assertEqual([call.args[0] for call in press.call_args_list], ["a", "b", "a", "b"])
 
+    def test_text_action_writes_whole_string_in_one_call(self):
+        settings = make_engine(
+            input_type="text", text="Hello, world! (v2.0.1)",
+            repeat_until_stopped=False, repeat_count=1, interval_seconds=0,
+        )
+        with mock.patch("autoclicker.engine.pyautogui.write") as write, \
+             mock.patch("autoclicker.engine.pyautogui.press") as press, \
+             mock.patch("autoclicker.engine.pyautogui.click") as click:
+            engine = PressEngine(settings, on_status=lambda _m: None)
+            engine.start()
+            thread = engine._thread
+            thread.join(timeout=2)
+        write.assert_called_once_with("Hello, world! (v2.0.1)")
+        press.assert_not_called()
+        click.assert_not_called()
+        self.assertEqual(engine.count, 1)
+
+    def test_text_action_repeats_once_per_action(self):
+        settings = make_engine(
+            input_type="text", text="ping 10.0.0.1",
+            repeat_until_stopped=False, repeat_count=3, interval_seconds=0,
+        )
+        with mock.patch("autoclicker.engine.pyautogui.write") as write:
+            engine = PressEngine(settings, on_status=lambda _m: None)
+            engine.start()
+            thread = engine._thread
+            thread.join(timeout=2)
+        self.assertEqual([call.args[0] for call in write.call_args_list], ["ping 10.0.0.1"] * 3)
+        self.assertEqual(engine.count, 3)
+
+    def test_text_action_runs_beside_keys_in_a_sequence(self):
+        settings = make_engine(
+            repeat_until_stopped=False,
+            repeat_count=1,
+            interval_seconds=0,
+            actions=[
+                {"input_type": "text", "text": "git status"},
+                {"input_type": "keyboard", "key": "enter", "modifiers": [], "click_type": "single"},
+            ],
+        )
+        with mock.patch("autoclicker.engine.pyautogui.write") as write, \
+             mock.patch("autoclicker.engine.pyautogui.press") as press:
+            engine = PressEngine(settings, on_status=lambda _m: None)
+            engine.start()
+            thread = engine._thread
+            thread.join(timeout=2)
+        write.assert_called_once_with("git status")
+        press.assert_called_once_with("enter")
+        self.assertEqual(engine.count, 2)
+
+    def test_text_action_ignores_hold_mode(self):
+        settings = make_engine(
+            input_type="text", text="held?", hold_mode=True, hold_duration_seconds=5,
+            repeat_until_stopped=False, repeat_count=1, interval_seconds=0,
+        )
+        with mock.patch("autoclicker.engine.pyautogui.write") as write, \
+             mock.patch("autoclicker.engine.pyautogui.keyDown") as down:
+            engine = PressEngine(settings, on_status=lambda _m: None)
+            engine.start()
+            thread = engine._thread
+            thread.join(timeout=2)
+        write.assert_called_once_with("held?")
+        down.assert_not_called()
+
     def test_hold_keyboard_uses_key_down_and_up(self):
         settings = make_engine(
             input_type="keyboard", key="a", hold_mode=True,

@@ -12,7 +12,65 @@ from . import macro, themes
 from .profiles import load_profiles, save_profiles
 from . import updater
 
-APP_NAME = "AutoKeyPresser 2.0"
+APP_NAME = "AutoKeyPresser 2.0.1"
+
+# The action card labels map one-to-one onto the engine's input_type values.
+INPUT_TYPES = {"Mouse": "mouse", "Keyboard": "keyboard", "Text": "text"}
+
+ACTION_FIELDS = (
+    "mouse_button",
+    "key",
+    "text",
+    "modifiers",
+    "click_type",
+    "use_fixed_position",
+    "fixed_x",
+    "fixed_y",
+    "hold_mode",
+    "hold_duration_seconds",
+    "randomize_interval",
+    "random_min_seconds",
+    "random_max_seconds",
+)
+
+
+class InvalidSettings(ValueError):
+    """The action card holds something the engine cannot send."""
+
+
+def input_type_for(mode):
+    return INPUT_TYPES.get(mode, "mouse")
+
+
+def mode_for(input_type):
+    for mode, value in INPUT_TYPES.items():
+        if value == input_type:
+            return mode
+    return "Mouse"
+
+
+def checked_text(raw):
+    """Return the text as typed, or raise InvalidSettings when it cannot be sent."""
+    if not raw.strip():
+        raise InvalidSettings("Enter the text to type first.")
+    if any(not char.isprintable() for char in raw):
+        raise InvalidSettings(
+            "Text mode sends one line at a time - remove line breaks and tabs."
+        )
+    if any(ord(char) > 126 for char in raw):
+        raise InvalidSettings(
+            "Text mode sends printable ASCII - replace accented letters, curly quotes, and emoji."
+        )
+    return raw
+
+
+def settings_to_action(settings):
+    """Freeze a PressSettings into the dict a profile stores."""
+    action = {"input_type": settings.input_type}
+    for name in ACTION_FIELDS:
+        value = getattr(settings, name)
+        action[name] = list(value) if isinstance(value, list) else value
+    return action
 
 
 def _mix_color(color, other, amount):
@@ -194,6 +252,7 @@ class AutoClickerApp:
         self.input_type_var = tk.StringVar(value="Mouse")
         self.mouse_button_var = tk.StringVar(value="Left")
         self.key_var = tk.StringVar(value="A")
+        self.text_var = tk.StringVar()
         self.click_type_var = tk.StringVar(value="Single")
         self.repeat_mode_var = tk.StringVar(value="until")
         self.repeat_count_var = tk.StringVar(value="1")
@@ -314,21 +373,30 @@ class AutoClickerApp:
             style="Segment.TRadiobutton",
             command=self._refresh_action_fields,
         ).grid(row=0, column=1)
+        ttk.Radiobutton(
+            mode,
+            text="Text",
+            variable=self.input_type_var,
+            value="Text",
+            style="Segment.TRadiobutton",
+            command=self._refresh_action_fields,
+        ).grid(row=0, column=2)
 
         action_fields = ttk.Frame(action, style="Panel.TFrame")
         action_fields.grid(row=1, column=0, sticky="ew")
         for column in range(3):
             action_fields.grid_columnconfigure(column, weight=1)
 
-        ttk.Label(action_fields, text="MOUSE BUTTON", style="FieldLabel.TLabel").grid(
-            row=0, column=0, sticky="w", padx=(0, 10)
+        self.mouse_label = ttk.Label(
+            action_fields, text="MOUSE BUTTON", style="FieldLabel.TLabel"
         )
-        ttk.Label(action_fields, text="KEY", style="FieldLabel.TLabel").grid(
-            row=0, column=1, sticky="w", padx=10
+        self.mouse_label.grid(row=0, column=0, sticky="w", padx=(0, 10))
+        self.key_label = ttk.Label(action_fields, text="KEY", style="FieldLabel.TLabel")
+        self.key_label.grid(row=0, column=1, sticky="w", padx=10)
+        self.press_label = ttk.Label(
+            action_fields, text="PRESS TYPE", style="FieldLabel.TLabel"
         )
-        ttk.Label(action_fields, text="PRESS TYPE", style="FieldLabel.TLabel").grid(
-            row=0, column=2, sticky="w", padx=(10, 0)
-        )
+        self.press_label.grid(row=0, column=2, sticky="w", padx=(10, 0))
 
         self.mouse_menu = ttk.Combobox(
             action_fields,
@@ -352,11 +420,13 @@ class AutoClickerApp:
         )
         self.click_type_menu.grid(row=1, column=2, sticky="ew", padx=(10, 0), pady=(6, 0))
 
-        ttk.Label(action_fields, text="MODIFIERS", style="FieldLabel.TLabel").grid(
-            row=2, column=0, columnspan=3, sticky="w", pady=(17, 6)
+        self.modifier_label = ttk.Label(
+            action_fields, text="MODIFIERS", style="FieldLabel.TLabel"
         )
+        self.modifier_label.grid(row=2, column=0, columnspan=3, sticky="w", pady=(17, 6))
         modifier_row = ttk.Frame(action_fields, style="Panel.TFrame")
         modifier_row.grid(row=3, column=0, columnspan=3, sticky="w")
+        self.modifier_row = modifier_row
         self.modifier_vars = {}
         self.modifier_boxes = {}
         for index, name in enumerate(keymod.MODIFIERS):
@@ -370,6 +440,22 @@ class AutoClickerApp:
             box.grid(row=0, column=index, padx=(0, 7))
             self.modifier_vars[name] = var
             self.modifier_boxes[name] = box
+
+        self.text_row = ttk.Frame(action_fields, style="Panel.TFrame")
+        self.text_row.grid(row=0, column=0, columnspan=3, sticky="ew")
+        self.text_row.grid_columnconfigure(1, weight=1)
+        ttk.Label(self.text_row, text="TEXT TO TYPE", style="FieldLabel.TLabel").grid(
+            row=0, column=0, sticky="w", padx=(0, 10)
+        )
+        ttk.Entry(self.text_row, textvariable=self.text_var).grid(
+            row=0, column=1, sticky="ew"
+        )
+        ttk.Label(
+            self.text_row,
+            text="One line of printable ASCII, sent as a single action.",
+            style="CardMuted.TLabel",
+        ).grid(row=1, column=1, sticky="w", pady=(6, 0))
+        self.text_row.grid_remove()
 
         # Timing card --------------------------------------------------------
         timing = ttk.Frame(left_column, style="Card.TFrame", padding=(20, 18))
@@ -436,6 +522,7 @@ class AutoClickerApp:
             command=self._refresh_timing_fields,
         )
         hold_switch.grid(row=0, column=0, rowspan=2, padx=(0, 9))
+        self.hold_switch = hold_switch
         self._switches.append(hold_switch)
         ttk.Label(hold_group, text="Hold action", style="CardLabel.TLabel").grid(
             row=0, column=1, sticky="w"
@@ -702,7 +789,7 @@ class AutoClickerApp:
         ttk.Label(footer, textvariable=self.status_var, style="Muted.TLabel").grid(
             row=0, column=1, sticky="w"
         )
-        ttk.Label(footer, text="v2.0  •  local by design", style="Quiet.TLabel").grid(
+        ttk.Label(footer, text="v2.0.1  •  local by design", style="Quiet.TLabel").grid(
             row=0, column=2, sticky="e"
         )
 
@@ -710,6 +797,7 @@ class AutoClickerApp:
             self.input_type_var,
             self.mouse_button_var,
             self.key_var,
+            self.text_var,
             self.click_type_var,
             self.repeat_mode_var,
             self.repeat_count_var,
@@ -1073,13 +1161,21 @@ class AutoClickerApp:
         if not hasattr(self, "summary_var"):
             return
 
-        if self.input_type_var.get() == "Keyboard":
+        mode = self.input_type_var.get()
+        if mode == "Keyboard":
             selected = [name for name, var in self.modifier_vars.items() if var.get()]
             action = "+".join(selected + [self.key_var.get()])
             if self.hold_mode_var.get():
                 action += " held for %s ms" % (self.hold_duration_var.get() or "0")
             else:
                 action += " key press"
+        elif mode == "Text":
+            typed = self.text_var.get()
+            if not typed.strip():
+                action = "type the text you enter"
+            else:
+                preview = typed if len(typed) <= 32 else typed[:29] + "..."
+                action = 'type "%s"' % preview
         else:
             action = "%s %s click" % (
                 self.mouse_button_var.get(),
@@ -1112,7 +1208,7 @@ class AutoClickerApp:
             if self.cursor_mode_var.get() == "current"
             else "at (%s, %s)" % (self.x_var.get() or "0", self.y_var.get() or "0")
         )
-        if self.input_type_var.get() == "Keyboard":
+        if mode in ("Keyboard", "Text"):
             position = "in the active app"
         self.summary_var.set("%s every %s, %s %s." % (action, timing, repeat, position))
 
@@ -1136,7 +1232,9 @@ class AutoClickerApp:
         self.status_dot.create_oval(2, 2, 10, 10, fill=color, outline=color)
 
     def _refresh_timing_fields(self):
-        enabled_hold = self.hold_mode_var.get()
+        enabled_hold = (
+            self.hold_mode_var.get() and self.input_type_var.get() != "Text"
+        )
         enabled_random = self.randomize_var.get()
         self.hold_duration_spin.state(["!disabled"] if enabled_hold else ["disabled"])
         for widget in (self.random_min_spin, self.random_max_spin):
@@ -1147,10 +1245,10 @@ class AutoClickerApp:
         self.repeat_count_spin.state(["!disabled"] if enabled else ["disabled"])
 
     def _refresh_cursor_fields(self):
-        keyboard_mode = self.input_type_var.get() == "Keyboard"
+        mouse_mode = self.input_type_var.get() == "Mouse"
         for radio in (self.cursor_live_radio, self.cursor_fixed_radio):
-            radio.state(["disabled"] if keyboard_mode else ["!disabled"])
-        enabled = self.cursor_mode_var.get() == "pick" and not keyboard_mode
+            radio.state(["!disabled"] if mouse_mode else ["disabled"])
+        enabled = self.cursor_mode_var.get() == "pick" and mouse_mode
         for widget in (self.pick_button, self.x_spin, self.y_spin):
             widget.state(["!disabled"] if enabled else ["disabled"])
         if enabled:
@@ -1167,12 +1265,13 @@ class AutoClickerApp:
     # ---------------------------------------------------------------- config
     def _apply_config(self):
         c = self.config
-        self.input_type_var.set("Keyboard" if c.get("input_type") == "keyboard" else "Mouse")
+        self.input_type_var.set(mode_for(c.get("input_type", "mouse")))
         self.mouse_button_var.set(c.get("mouse_button", "left").title())
         display_key = next(
             (d for d, k in keymod.KEY_MAP if k == c.get("key")), "A"
         )
         self.key_var.set(display_key)
+        self.text_var.set(c.get("text", ""))
         for name, var in self.modifier_vars.items():
             var.set(keymod.os_modifier(name) in c.get("modifiers", []))
         self.click_type_var.set(c.get("click_type", "single").title())
@@ -1194,9 +1293,10 @@ class AutoClickerApp:
 
     def _collect_config(self):
         c = self.config
-        c["input_type"] = "keyboard" if self.input_type_var.get() == "Keyboard" else "mouse"
+        c["input_type"] = input_type_for(self.input_type_var.get())
         c["mouse_button"] = self.mouse_button_var.get().lower()
         c["key"] = keymod.display_to_key(self.key_var.get())
+        c["text"] = self.text_var.get()
         c["modifiers"] = [keymod.os_modifier(n) for n, v in self.modifier_vars.items() if v.get()]
         c["click_type"] = self.click_type_var.get().lower()
         c["repeat_until_stopped"] = self.repeat_mode_var.get() == "until"
@@ -1218,13 +1318,45 @@ class AutoClickerApp:
 
     # ------------------------------------------------------------- behaviors
     def _refresh_action_fields(self):
-        is_keyboard = self.input_type_var.get() == "Keyboard"
-        self.mouse_menu.state(["disabled"] if is_keyboard else ["!disabled", "readonly"])
-        self.key_menu.state(["!disabled", "readonly"] if is_keyboard else ["disabled"])
+        mode = self.input_type_var.get()
+        self.mouse_menu.state(
+            ["!disabled", "readonly"] if mode == "Mouse" else ["disabled"]
+        )
+        self.key_menu.state(
+            ["!disabled", "readonly"] if mode == "Keyboard" else ["disabled"]
+        )
+        self.click_type_menu.state(
+            ["disabled"] if mode == "Text" else ["!disabled", "readonly"]
+        )
         for box in self.modifier_boxes.values():
-            box.state(["!disabled"] if is_keyboard else ["disabled"])
+            box.state(["!disabled"] if mode == "Keyboard" else ["disabled"])
+        # Text mode needs the room the pointer and key fields occupy, so it swaps
+        # the whole block for one text entry; the other modes keep every field.
+        text_mode = mode == "Text"
+        for widget in (
+            self.mouse_label,
+            self.mouse_menu,
+            self.key_label,
+            self.key_menu,
+            self.press_label,
+            self.click_type_menu,
+        ):
+            if text_mode:
+                widget.grid_remove()
+            else:
+                widget.grid()
+        if text_mode:
+            self.modifier_label.grid_remove()
+            self.modifier_row.grid_remove()
+            self.text_row.grid()
+        else:
+            self.modifier_label.grid()
+            self.modifier_row.grid()
+            self.text_row.grid_remove()
+        self.hold_switch.configure(state="disabled" if mode == "Text" else "normal")
         if hasattr(self, "cursor_mode_var"):
             self._refresh_cursor_fields()
+        self._refresh_timing_fields()
         self._update_summary()
 
     def _pick_location(self):
@@ -1238,7 +1370,11 @@ class AutoClickerApp:
 
     def _collect_settings(self):
         s = self.settings
-        s.input_type = "keyboard" if self.input_type_var.get() == "Keyboard" else "mouse"
+        s.input_type = input_type_for(self.input_type_var.get())
+        if s.input_type == "text":
+            s.text = checked_text(self.text_var.get())
+        else:
+            s.text = ""
         s.mouse_button = self.mouse_button_var.get().lower()
         s.key = keymod.display_to_key(self.key_var.get())
         s.modifiers = [keymod.os_modifier(n) for n, v in self.modifier_vars.items() if v.get()]
@@ -1259,31 +1395,17 @@ class AutoClickerApp:
         s.random_min_seconds = max(int(self.random_min_var.get() or 1) / 1000, 0.001)
         s.random_max_seconds = max(int(self.random_max_var.get() or 1) / 1000, 0.001)
         if s.randomize_interval and s.random_max_seconds < s.random_min_seconds:
-            raise ValueError("Random maximum must not be lower than minimum.")
+            raise InvalidSettings("Random maximum must not be lower than minimum.")
         return s
 
     def _current_action(self):
-        settings = self._collect_settings()
-        return {
-            "input_type": settings.input_type,
-            "mouse_button": settings.mouse_button,
-            "key": settings.key,
-            "modifiers": list(settings.modifiers),
-            "click_type": settings.click_type,
-            "use_fixed_position": settings.use_fixed_position,
-            "fixed_x": settings.fixed_x,
-            "fixed_y": settings.fixed_y,
-            "hold_mode": settings.hold_mode,
-            "hold_duration_seconds": settings.hold_duration_seconds,
-            "randomize_interval": settings.randomize_interval,
-            "random_min_seconds": settings.random_min_seconds,
-            "random_max_seconds": settings.random_max_seconds,
-        }
+        return settings_to_action(self._collect_settings())
 
     def _apply_action(self, action):
-        self.input_type_var.set("Keyboard" if action.get("input_type") == "keyboard" else "Mouse")
+        self.input_type_var.set(mode_for(action.get("input_type", "mouse")))
         self.mouse_button_var.set(action.get("mouse_button", "left").title())
         self.key_var.set(next((d for d, k in keymod.KEY_MAP if k == action.get("key")), "A"))
+        self.text_var.set(action.get("text", ""))
         modifiers = action.get("modifiers", [])
         for name, var in self.modifier_vars.items():
             var.set(keymod.os_modifier(name) in modifiers)
@@ -1297,8 +1419,6 @@ class AutoClickerApp:
         self.random_min_var.set(str(round(float(action.get("random_min_seconds", 0.05)) * 1000)))
         self.random_max_var.set(str(round(float(action.get("random_max_seconds", 0.15)) * 1000)))
         self._refresh_action_fields()
-        self._refresh_timing_fields()
-        self._refresh_cursor_fields()
 
     def _toggle(self):
         if self.engine and self.engine.running:
@@ -1311,6 +1431,9 @@ class AutoClickerApp:
             return
         try:
             self._collect_settings()
+        except InvalidSettings as exc:
+            messagebox.showerror(APP_NAME, str(exc))
+            return
         except ValueError:
             messagebox.showerror(APP_NAME, "Please enter valid numbers.")
             return
@@ -1586,10 +1709,16 @@ class AutoClickerApp:
         sections = (
             (
                 "Build an automation",
-                "1. Choose Mouse or Keyboard in the Action card.\n"
+                "1. Choose Mouse, Keyboard, or Text in the Action card.\n"
                 "2. Set the interval between actions.\n"
                 "3. Choose a repeat rule and cursor position.\n"
                 "4. Review the run-plan summary, then press Start automation.",
+            ),
+            (
+                "Typing text",
+                "Text mode sends a whole line of printable ASCII in one action, so a message, "
+                "a URL, or a command line is one step instead of fifty. The interval still runs "
+                "between sends, and Stop or F12 halts before the next one.",
             ),
             (
                 "Global controls",
@@ -1688,6 +1817,9 @@ class AutoClickerApp:
             return
         try:
             settings = self._collect_settings()
+        except InvalidSettings as exc:
+            messagebox.showerror(APP_NAME, str(exc))
+            return
         except ValueError:
             messagebox.showerror(APP_NAME, "Please enter valid repeat values first.")
             return
@@ -2045,6 +2177,9 @@ class AutoClickerApp:
                 return
             try:
                 action = self._current_action()
+            except InvalidSettings as exc:
+                messagebox.showerror(APP_NAME, str(exc), parent=win)
+                return
             except ValueError:
                 messagebox.showerror(APP_NAME, "Please enter valid values first.", parent=win)
                 return
@@ -2060,6 +2195,9 @@ class AutoClickerApp:
                 return
             try:
                 action = self._current_action()
+            except InvalidSettings as exc:
+                messagebox.showerror(APP_NAME, str(exc), parent=win)
+                return
             except ValueError:
                 messagebox.showerror(APP_NAME, "Please enter valid values first.", parent=win)
                 return
