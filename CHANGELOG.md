@@ -16,6 +16,11 @@ published GitHub release notes and the repository history.
   command line is a single step instead of one key press per character. Text actions
   are stored as an optional `"text"` field in profiles and saved settings, so existing
   profiles and configuration files load unchanged.
+- Start delay of 0 to 30 seconds in the run plan, with a live countdown in the run
+  card. The wait happens inside the engine before the first action, so it applies to
+  a hotkey start as well as the Start button, and Stop or F12 during the countdown
+  ends the run without sending anything. The delay is saved as `"start_delay_s"` and
+  defaults to `"0"`, which keeps the previous timing exactly.
 
 ## [2.0] - 2026-09-16
 

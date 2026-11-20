@@ -7,7 +7,7 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
-CURRENT_VERSION = "2.0.1"
+CURRENT_VERSION = "2.0.2"
 REPOSITORY = "CamjamPNG/autokeypresser"
 RELEASES_API = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
 RELEASES_PAGE = f"https://github.com/{REPOSITORY}/releases/latest"
