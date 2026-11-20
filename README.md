@@ -26,6 +26,8 @@ mouse button from a modern, focused desktop workspace.
  * Type a whole line of printable text as one action;
  * Autoclick with a specified amount of time between each press
    [hours/mins/secs/milliseconds];
+ * Optional start delay of up to 30 seconds before the first action, with a
+   visible countdown you can cancel with Stop or F12;
  * Choose mouse button [Left/Right/Middle];
  * Choose press type [Single/Double];
  * Repeat until stopped or repeat a given amount of times;

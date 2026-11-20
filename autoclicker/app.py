@@ -12,7 +12,7 @@ from . import macro, themes
 from .profiles import load_profiles, save_profiles
 from . import updater
 
-APP_NAME = "AutoKeyPresser 2.0.1"
+APP_NAME = "AutoKeyPresser 2.0.2"
 
 # The action card labels map one-to-one onto the engine's input_type values.
 INPUT_TYPES = {"Mouse": "mouse", "Keyboard": "keyboard", "Text": "text"}
@@ -62,6 +62,17 @@ def checked_text(raw):
             "Text mode sends printable ASCII - replace accented letters, curly quotes, and emoji."
         )
     return raw
+
+
+def checked_delay(raw):
+    """Return the start delay in whole seconds, or raise InvalidSettings."""
+    try:
+        seconds = int(str(raw).strip())
+    except (TypeError, ValueError):
+        raise InvalidSettings("Start delay must be a whole number from 0 to 30.")
+    if seconds < 0 or seconds > 30:
+        raise InvalidSettings("Start delay must be between 0 and 30 seconds.")
+    return seconds
 
 
 def settings_to_action(settings):
@@ -260,6 +271,8 @@ class AutoClickerApp:
         self.x_var = tk.StringVar(value="0")
         self.y_var = tk.StringVar(value="0")
         self.theme_var = tk.StringVar(value=self.config.get("theme", "Aurora"))
+        self.start_delay_var = tk.StringVar(value="0")
+        self.countdown_var = tk.StringVar(value="")
         self.macro_status_var = tk.StringVar(value="No macro loaded")
         self.status_var = tk.StringVar(value="Ready")
         self.run_state_var = tk.StringVar(value="READY")
@@ -574,7 +587,7 @@ class AutoClickerApp:
         run = ttk.Frame(right_column, style="Card.TFrame", padding=(22, 20))
         run.grid(row=0, column=0, sticky="nsew")
         run.grid_columnconfigure(0, weight=1)
-        run.grid_rowconfigure(7, weight=1)
+        run.grid_rowconfigure(8, weight=1)
 
         run_header = ttk.Frame(run, style="Panel.TFrame")
         run_header.grid(row=0, column=0, sticky="ew")
@@ -630,14 +643,41 @@ class AutoClickerApp:
         )
         self.repeat_count_spin.grid(row=0, column=1, sticky="e")
 
+        delay_row = ttk.Frame(run, style="Panel.TFrame")
+        delay_row.grid(row=4, column=0, sticky="ew", pady=(16, 0))
+        delay_row.grid_columnconfigure(1, weight=1)
+        ttk.Label(delay_row, text="START DELAY", style="FieldLabel.TLabel").grid(
+            row=0, column=0, columnspan=2, sticky="w"
+        )
+        self.start_delay_spin = ttk.Spinbox(
+            delay_row,
+            from_=0,
+            to=30,
+            textvariable=self.start_delay_var,
+            width=7,
+        )
+        self.start_delay_spin.grid(row=1, column=0, sticky="w", pady=(6, 0))
+        ttk.Label(
+            delay_row,
+            text="seconds before the first action",
+            style="CardMuted.TLabel",
+        ).grid(row=1, column=1, sticky="w", padx=(8, 0), pady=(6, 0))
+        ttk.Label(
+            delay_row,
+            textvariable=self.countdown_var,
+            style="CardLabel.TLabel",
+            wraplength=250,
+            justify="left",
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
+
         ttk.Separator(run, orient="horizontal").grid(
-            row=4, column=0, sticky="ew", pady=(18, 16)
+            row=5, column=0, sticky="ew", pady=(18, 16)
         )
         ttk.Label(run, text="CURSOR POSITION", style="FieldLabel.TLabel").grid(
-            row=5, column=0, sticky="w", pady=(0, 8)
+            row=6, column=0, sticky="w", pady=(0, 8)
         )
         cursor_mode = ttk.Frame(run, style="Segment.TFrame", padding=2)
-        cursor_mode.grid(row=6, column=0, sticky="ew")
+        cursor_mode.grid(row=7, column=0, sticky="ew")
         cursor_mode.grid_columnconfigure(0, weight=1)
         cursor_mode.grid_columnconfigure(1, weight=1)
         self.cursor_live_radio = ttk.Radiobutton(
@@ -660,7 +700,7 @@ class AutoClickerApp:
         self.cursor_fixed_radio.grid(row=0, column=1, sticky="ew")
 
         self.fixed_row = ttk.Frame(run, style="Panel.TFrame")
-        self.fixed_row.grid(row=7, column=0, sticky="new", pady=(10, 0))
+        self.fixed_row.grid(row=8, column=0, sticky="new", pady=(10, 0))
         self.fixed_row.grid_columnconfigure(4, weight=1)
         self.pick_button = ttk.Button(
             self.fixed_row,
@@ -689,7 +729,7 @@ class AutoClickerApp:
         self.y_spin.grid(row=0, column=4, padx=(5, 0), sticky="w")
 
         summary = ttk.Frame(run, style="Inset.TFrame", padding=(14, 12))
-        summary.grid(row=8, column=0, sticky="ew", pady=(18, 14))
+        summary.grid(row=9, column=0, sticky="ew", pady=(18, 14))
         summary.grid_columnconfigure(1, weight=1)
         ttk.Label(summary, text="◆", style="AccentGlyph.TLabel").grid(
             row=0, column=0, sticky="n", padx=(0, 10)
@@ -708,9 +748,9 @@ class AutoClickerApp:
             style="Primary.TButton",
             command=self._toggle,
         )
-        self.start_button.grid(row=9, column=0, sticky="ew")
+        self.start_button.grid(row=10, column=0, sticky="ew")
         hotkey_row = ttk.Frame(run, style="Panel.TFrame")
-        hotkey_row.grid(row=10, column=0, sticky="ew", pady=(9, 0))
+        hotkey_row.grid(row=11, column=0, sticky="ew", pady=(9, 0))
         hotkey_row.grid_columnconfigure(1, weight=1)
         ttk.Button(
             hotkey_row,
@@ -789,7 +829,7 @@ class AutoClickerApp:
         ttk.Label(footer, textvariable=self.status_var, style="Muted.TLabel").grid(
             row=0, column=1, sticky="w"
         )
-        ttk.Label(footer, text="v2.0.1  •  local by design", style="Quiet.TLabel").grid(
+        ttk.Label(footer, text="v2.0.2  •  local by design", style="Quiet.TLabel").grid(
             row=0, column=2, sticky="e"
         )
 
@@ -813,6 +853,7 @@ class AutoClickerApp:
             self.randomize_var,
             self.random_min_var,
             self.random_max_var,
+            self.start_delay_var,
         )
         for variable in watched:
             variable.trace_add("write", lambda *_args: self._update_summary())
@@ -1210,14 +1251,21 @@ class AutoClickerApp:
         )
         if mode in ("Keyboard", "Text"):
             position = "in the active app"
-        self.summary_var.set("%s every %s, %s %s." % (action, timing, repeat, position))
+        try:
+            delay = int(self.start_delay_var.get() or 0)
+        except ValueError:
+            delay = 0
+        start = " after a %d s delay" % delay if delay > 0 else ""
+        self.summary_var.set(
+            "%s every %s%s, %s %s." % (action, timing, start, repeat, position)
+        )
 
     def _update_status_visual(self):
         if not hasattr(self, "status_dot"):
             return
         colors = self.current_theme["colors"]
         value = self.status_var.get().lower()
-        if value.startswith("running"):
+        if value.startswith("running") or value.startswith("starting"):
             color = colors.get("success", "#42d392")
             state = "RUNNING"
         elif "fail" in value or "emergency" in value or "error" in value:
@@ -1289,6 +1337,7 @@ class AutoClickerApp:
         self.randomize_var.set(c.get("randomize_interval", False))
         self.random_min_var.set(str(c.get("random_min_ms", "50")))
         self.random_max_var.set(str(c.get("random_max_ms", "150")))
+        self.start_delay_var.set(str(c.get("start_delay_s", "0")))
         self.theme_var.set(c.get("theme", "Aurora"))
 
     def _collect_config(self):
@@ -1313,6 +1362,7 @@ class AutoClickerApp:
         c["randomize_interval"] = self.randomize_var.get()
         c["random_min_ms"] = self.random_min_var.get()
         c["random_max_ms"] = self.random_max_var.get()
+        c["start_delay_s"] = self.start_delay_var.get()
         c["theme"] = self.theme_var.get()
         return c
 
@@ -1368,7 +1418,7 @@ class AutoClickerApp:
         self.cursor_mode_var.set("pick")
         self._refresh_cursor_fields()
 
-    def _collect_settings(self, validate_text=True):
+    def _collect_settings(self, validate_text=True, validate_delay=True):
         s = self.settings
         s.input_type = input_type_for(self.input_type_var.get())
         if s.input_type != "text":
@@ -1398,6 +1448,8 @@ class AutoClickerApp:
         s.random_max_seconds = max(int(self.random_max_var.get() or 1) / 1000, 0.001)
         if s.randomize_interval and s.random_max_seconds < s.random_min_seconds:
             raise InvalidSettings("Random maximum must not be lower than minimum.")
+        if validate_delay:
+            s.start_delay_seconds = float(checked_delay(self.start_delay_var.get()))
         return s
 
     def _current_action(self):
@@ -1444,7 +1496,12 @@ class AutoClickerApp:
         self.pending_actions = []
         self.engine.start()
         self._update_running_ui(True)
-        self.status_var.set("Running · 0 actions")
+        delay = int(self.settings.start_delay_seconds)
+        if delay > 0:
+            self.countdown_var.set("%d s left · Stop or F12 cancels" % delay)
+            self.status_var.set("Starting in %d s" % delay)
+        else:
+            self.status_var.set("Running · 0 actions")
 
     def _stop(self):
         if self.engine:
@@ -1458,6 +1515,7 @@ class AutoClickerApp:
             self.run_state_var.set("RUNNING")
         else:
             self.start_button.config(style="Primary.TButton")
+            self.countdown_var.set("")
             self._update_hotkey_label()
 
     def _poll_queue(self):
@@ -1466,6 +1524,11 @@ class AutoClickerApp:
                 msg, value = self.queue.get_nowait()
                 if msg == "status":
                     self.status_var.set("Running · %d actions" % value)
+                    if self.countdown_var.get():
+                        self.countdown_var.set("")
+                elif msg == "countdown":
+                    self.status_var.set("Starting in %d s" % value)
+                    self.countdown_var.set("%d s left · Stop or F12 cancels" % value)
                 elif msg == "macro_status":
                     self.macro_status_var.set("Playing - actions: %d" % value)
                 elif msg == "macro_done":
@@ -1820,7 +1883,7 @@ class AutoClickerApp:
         try:
             # Playback only needs the repeat rules, so a Text action still being
             # typed must not block a recording the player already holds.
-            settings = self._collect_settings(validate_text=False)
+            settings = self._collect_settings(validate_text=False, validate_delay=False)
         except InvalidSettings as exc:
             messagebox.showerror(APP_NAME, str(exc))
             return

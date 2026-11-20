@@ -15,6 +15,7 @@ from autoclicker.app import (
     APP_NAME,
     InvalidSettings,
     build_hotkey,
+    checked_delay,
     checked_text,
     input_type_for,
     mode_for,
@@ -208,6 +209,160 @@ class ConfigTextTests(unittest.TestCase):
         self.assertEqual(config_module.DEFAULTS["text"], "")
 
 
+class DelayValidationTests(unittest.TestCase):
+    def test_accepts_the_whole_range(self):
+        self.assertEqual(checked_delay("0"), 0)
+        self.assertEqual(checked_delay(" 7 "), 7)
+        self.assertEqual(checked_delay("30"), 30)
+
+    def test_range_has_its_own_message(self):
+        for raw in ("-1", "31", "600"):
+            with self.assertRaises(InvalidSettings) as raised:
+                checked_delay(raw)
+            self.assertEqual(
+                str(raised.exception),
+                "Start delay must be between 0 and 30 seconds.",
+            )
+
+    def test_non_numeric_has_its_own_message(self):
+        for raw in ("", "soon", "2.5"):
+            with self.assertRaises(InvalidSettings) as raised:
+                checked_delay(raw)
+            self.assertEqual(
+                str(raised.exception),
+                "Start delay must be a whole number from 0 to 30.",
+            )
+
+
+class ConfigStartDelayTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.directory, ignore_errors=True)
+        patcher = mock.patch.multiple(
+            config_module,
+            CONFIG_DIR=self.directory,
+            CONFIG_FILE=self.directory / "config.json",
+            LEGACY_CONFIG_FILE=self.directory / "legacy.json",
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_saved_delay_restores_on_the_next_launch(self):
+        saved = config_module.load_config()
+        saved["start_delay_s"] = "5"
+        config_module.save_config(saved)
+
+        self.assertEqual(config_module.load_config()["start_delay_s"], "5")
+
+    def test_defaults_start_with_no_delay(self):
+        self.assertEqual(config_module.DEFAULTS["start_delay_s"], "0")
+
+    def test_config_saved_before_the_delay_key_still_loads(self):
+        (self.directory / "config.json").write_text(
+            json.dumps({"input_type": "mouse", "ms": "250"}), encoding="utf-8"
+        )
+
+        restored = config_module.load_config()
+
+        self.assertEqual(restored["ms"], "250")
+        self.assertEqual(restored["start_delay_s"], "0")
+
+
+class StartDelayAppTests(unittest.TestCase):
+    def setUp(self):
+        try:
+            self.root = tk.Tk()
+        except tk.TclError as exc:
+            self.skipTest("Tk display unavailable: %s" % exc)
+        self.addCleanup(self.root.destroy)
+        with mock.patch.object(app_module.AutoClickerApp, "_start_hotkey_listener"), \
+             mock.patch.object(app_module.AutoClickerApp, "_check_for_updates"):
+            self.app = app_module.AutoClickerApp(self.root)
+
+    def test_delay_reaches_the_engine_on_start(self):
+        self.app.start_delay_var.set("5")
+
+        with mock.patch.object(app_module, "PressEngine") as engine_class:
+            self.app._start()
+
+        self.assertEqual(self.app.settings.start_delay_seconds, 5.0)
+        self.assertEqual(
+            engine_class.call_args.args[0].start_delay_seconds, 5.0
+        )
+
+    def test_out_of_range_delay_is_reported_by_its_own_message(self):
+        self.app.start_delay_var.set("45")
+
+        with mock.patch.object(app_module, "messagebox") as box, \
+             mock.patch.object(app_module, "PressEngine") as engine_class:
+            self.app._start()
+
+        self.assertEqual(
+            box.showerror.call_args.args[1],
+            "Start delay must be between 0 and 30 seconds.",
+        )
+        engine_class.assert_not_called()
+
+    def test_non_numeric_delay_is_reported_by_its_own_message(self):
+        self.app.start_delay_var.set("soon")
+
+        with mock.patch.object(app_module, "messagebox") as box, \
+             mock.patch.object(app_module, "PressEngine") as engine_class:
+            self.app._start()
+
+        self.assertEqual(
+            box.showerror.call_args.args[1],
+            "Start delay must be a whole number from 0 to 30.",
+        )
+        engine_class.assert_not_called()
+
+    def test_macro_playback_ignores_an_invalid_delay(self):
+        self.app.input_type_var.set("Text")
+        self.app.text_var.set("")
+        self.app.start_delay_var.set("45")
+        self.app.last_macro = [{"kind": "key", "key": "a", "action": "press", "at": 0.0}]
+
+        with mock.patch.object(app_module, "messagebox") as box, \
+             mock.patch.object(app_module.macro, "MacroPlayer") as player:
+            self.app._play_macro()
+
+        box.showerror.assert_not_called()
+        player.assert_called_once()
+
+    def test_summary_names_the_delay_before_the_repeat_rule(self):
+        self.app.start_delay_var.set("5")
+        self.assertIn("after a 5 s delay, until you stop it", self.app.summary_var.get())
+
+        self.app.start_delay_var.set("0")
+        self.assertNotIn("delay", self.app.summary_var.get())
+
+    def test_countdown_shows_in_the_run_plan_and_clears_on_done(self):
+        self.app.start_delay_var.set("5")
+        with mock.patch.object(app_module, "PressEngine"):
+            self.app._start()
+        self.assertEqual(
+            self.app.countdown_var.get(), "5 s left · Stop or F12 cancels"
+        )
+        self.assertEqual(self.app.status_var.get(), "Starting in 5 s")
+
+        self.app.queue.put(("countdown", 3))
+        self.app._poll_queue()
+        self.assertEqual(
+            self.app.countdown_var.get(), "3 s left · Stop or F12 cancels"
+        )
+        self.assertEqual(self.app.status_var.get(), "Starting in 3 s")
+
+        # The first action ends the pre-roll, so the countdown line goes away.
+        self.app.queue.put(("status", 1))
+        self.app._poll_queue()
+        self.assertEqual(self.app.countdown_var.get(), "")
+
+        self.app.queue.put(("done", 1))
+        self.app._poll_queue()
+        self.assertEqual(self.app.countdown_var.get(), "")
+        self.assertEqual(self.app.status_var.get(), "Stopped · 1 actions")
+
+
 class MacroPlaybackTests(unittest.TestCase):
     """Playback needs only the repeat rules, and names a range that cannot work."""
 
@@ -252,8 +407,8 @@ class MacroPlaybackTests(unittest.TestCase):
 
 class VersionTests(unittest.TestCase):
     def test_app_reports_the_version_the_updater_checks(self):
-        self.assertEqual(updater.CURRENT_VERSION, "2.0.1")
-        self.assertEqual(APP_NAME, "AutoKeyPresser 2.0.1")
+        self.assertEqual(updater.CURRENT_VERSION, "2.0.2")
+        self.assertEqual(APP_NAME, "AutoKeyPresser 2.0.2")
 
 
 class UpdaterTests(unittest.TestCase):

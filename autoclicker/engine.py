@@ -1,3 +1,4 @@
+import math
 import threading
 import random
 import time
@@ -26,6 +27,7 @@ class PressSettings:
     randomize_interval: bool = False
     random_min_seconds: float = 0.05
     random_max_seconds: float = 0.15
+    start_delay_seconds: float = 0.0
 
 
 class PressEngine:
@@ -59,6 +61,8 @@ class PressEngine:
             # PyAutoGUI defaults to a 100 ms pause after every call, which
             # caps the presser at roughly 10 actions per second.
             pyautogui.PAUSE = 0
+            if not self._pre_roll():
+                return
             interval = max(self.settings.interval_seconds, 0.001)
             limit = None if self.settings.repeat_until_stopped else max(
                 self.settings.repeat_count, 0
@@ -81,6 +85,23 @@ class PressEngine:
                     break
         finally:
             self.on_status(("done", self.count))
+
+    def _pre_roll(self):
+        """Wait out the start delay, reporting each whole second left.
+
+        Returns False when a stop lands during the countdown, so no action is
+        ever sent for that run.
+        """
+        remaining = max(
+            float(getattr(self.settings, "start_delay_seconds", 0.0) or 0.0), 0.0
+        )
+        while remaining > 0:
+            self.on_status(("countdown", int(math.ceil(remaining))))
+            step = min(1.0, remaining)
+            if self._stop_event.wait(step):
+                return False
+            remaining -= step
+        return True
 
     def _press_once(self):
         self._press_action(self.settings)

@@ -26,6 +26,7 @@ DEFAULTS = {
     "randomize_interval": False,
     "random_min_ms": "50",
     "random_max_ms": "150",
+    "start_delay_s": "0",
     "hotkey_mod": "None",
     "hotkey_key": "F6",
     "theme": "Aurora",

@@ -1,3 +1,5 @@
+import threading
+import time
 import unittest
 from unittest import mock
 
@@ -195,6 +197,90 @@ class PressEngineTests(unittest.TestCase):
             thread.join(timeout=2)
         down.assert_called_once_with("a")
         up.assert_called_once_with("a")
+
+
+class StartDelayTests(unittest.TestCase):
+    def test_no_input_is_sent_before_the_delay_elapses(self):
+        settings = make_engine(
+            repeat_until_stopped=False, repeat_count=1, interval_seconds=0,
+            start_delay_seconds=0.4,
+        )
+        clicks = []
+
+        def record(*_args, **_kwargs):
+            clicks.append(time.monotonic())
+
+        with mock.patch("autoclicker.engine.pyautogui.click", side_effect=record):
+            engine = PressEngine(settings, on_status=lambda _m: None)
+            started = time.monotonic()
+            engine.start()
+            engine._thread.join(timeout=3)
+
+        self.assertEqual(len(clicks), 1)
+        self.assertGreaterEqual(clicks[0] - started, 0.35)
+        self.assertEqual(engine.count, 1)
+
+    def test_countdown_reports_whole_seconds_and_holds_the_first_action(self):
+        settings = make_engine(
+            repeat_until_stopped=False, repeat_count=1, interval_seconds=0,
+            start_delay_seconds=3,
+        )
+        statuses = []
+        ticked = threading.Event()
+
+        def on_status(message):
+            statuses.append(message)
+            if message[0] == "countdown":
+                ticked.set()
+
+        with mock.patch("autoclicker.engine.pyautogui.click") as click:
+            engine = PressEngine(settings, on_status=on_status)
+            engine.start()
+            self.assertTrue(ticked.wait(2))
+            click.assert_not_called()
+            engine.stop()
+            engine._thread.join(timeout=2)
+
+        self.assertEqual(statuses[0], ("countdown", 3))
+
+    def test_stopping_during_the_countdown_ends_the_run_cleanly(self):
+        settings = make_engine(
+            repeat_until_stopped=True, interval_seconds=0, start_delay_seconds=5
+        )
+        statuses = []
+        ticked = threading.Event()
+
+        def on_status(message):
+            statuses.append(message)
+            if message[0] == "countdown":
+                ticked.set()
+
+        with mock.patch("autoclicker.engine.pyautogui.click") as click, \
+             mock.patch("autoclicker.engine.pyautogui.press") as press:
+            engine = PressEngine(settings, on_status=on_status)
+            engine.start()
+            self.assertTrue(ticked.wait(2))
+            engine.stop()
+            engine._thread.join(timeout=2)
+
+        self.assertFalse(engine.running)
+        self.assertEqual(engine.count, 0)
+        click.assert_not_called()
+        press.assert_not_called()
+        self.assertEqual(statuses[-1], ("done", 0))
+
+    def test_zero_delay_skips_the_countdown_entirely(self):
+        settings = make_engine(
+            repeat_until_stopped=False, repeat_count=1, interval_seconds=0
+        )
+        statuses = []
+        with mock.patch("autoclicker.engine.pyautogui.click") as click:
+            engine = PressEngine(settings, on_status=statuses.append)
+            engine.start()
+            engine._thread.join(timeout=2)
+
+        self.assertEqual(click.call_count, 1)
+        self.assertFalse(any(msg == "countdown" for msg, _ in statuses))
 
 
 if __name__ == "__main__":
