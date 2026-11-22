@@ -21,6 +21,12 @@ published GitHub release notes and the repository history.
   a hotkey start as well as the Start button, and Stop or F12 during the countdown
   ends the run without sending anything. The delay is saved as `"start_delay_s"` and
   defaults to `"0"`, which keeps the previous timing exactly.
+- Step editor in the profile dialog, replacing the read-only detail pane. A profile's
+  steps are listed in order, and Move up, Move down, Remove, and Replace with current
+  action change that list in place; Save steps writes it back. The dialog shows
+  whether the list matches what is on disk, and Cancel or closing the window discards
+  edits without writing. Profiles keep their existing `"actions"` list on disk, so
+  saved profiles load in older builds unchanged.
 
 ## [2.0] - 2026-09-16
 

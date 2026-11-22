@@ -17,6 +17,7 @@ from autoclicker.app import (
     build_hotkey,
     checked_delay,
     checked_text,
+    describe_step,
     input_type_for,
     mode_for,
     settings_to_action,
@@ -122,6 +123,154 @@ class TextActionTests(unittest.TestCase):
         self.assertEqual(action["modifiers"], ["ctrl"])
         self.assertEqual(action["click_type"], "double")
         self.assertEqual(action["text"], "")
+
+
+class ProfileStepHelperTests(unittest.TestCase):
+    """The step list keeps its order in pure list arithmetic, with no Tk involved."""
+
+    def steps(self):
+        return [{"input_type": "keyboard", "key": key} for key in ("a", "b", "c")]
+
+    def keys(self, steps):
+        return [step["key"] for step in steps]
+
+    def test_move_swaps_neighbours_and_leaves_the_input_alone(self):
+        steps = self.steps()
+
+        self.assertEqual(self.keys(profiles_module.move_step(steps, 1, -1)), ["b", "a", "c"])
+        self.assertEqual(self.keys(profiles_module.move_step(steps, 1, 1)), ["a", "c", "b"])
+        self.assertEqual(self.keys(steps), ["a", "b", "c"])
+
+    def test_moving_beyond_either_end_does_nothing(self):
+        steps = self.steps()
+
+        for index, offset in ((0, -1), (2, 1), (3, -1), (-1, 1)):
+            self.assertEqual(profiles_module.move_step(steps, index, offset), steps)
+
+    def test_remove_drops_only_the_named_step(self):
+        steps = self.steps()
+
+        self.assertEqual(self.keys(profiles_module.remove_step(steps, 1)), ["a", "c"])
+        self.assertEqual(self.keys(profiles_module.remove_step(steps, 9)), ["a", "b", "c"])
+        self.assertEqual(self.keys(steps), ["a", "b", "c"])
+
+    def test_removing_the_only_step_leaves_an_empty_list(self):
+        self.assertEqual(profiles_module.remove_step(self.steps()[:1], 0), [])
+
+    def test_replace_swaps_in_the_new_step_and_keeps_the_rest(self):
+        new = {"input_type": "text", "text": "hello"}
+
+        replaced = profiles_module.replace_step(self.steps(), 2, new)
+
+        self.assertEqual(replaced[2], new)
+        self.assertEqual(self.keys(replaced[:2]), ["a", "b"])
+        self.assertEqual(self.keys(profiles_module.replace_step(self.steps(), 5, new)), ["a", "b", "c"])
+
+    def test_with_steps_keeps_the_other_profile_fields(self):
+        profiles = {"Sequence": {"actions": [{"input_type": "keyboard", "key": "a"}], "note": "keep"}}
+
+        updated = profiles_module.with_steps(
+            profiles, "Sequence", [{"input_type": "keyboard", "key": "b"}]
+        )
+
+        self.assertEqual(updated["Sequence"]["note"], "keep")
+        self.assertEqual(self.keys(updated["Sequence"]["actions"]), ["b"])
+        self.assertEqual(self.keys(profiles["Sequence"]["actions"]), ["a"])
+
+
+class ProfileStepPersistenceTests(unittest.TestCase):
+    """What the step editor writes to disk, checked against the file itself."""
+
+    def setUp(self):
+        self.directory = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.directory, ignore_errors=True)
+        patcher = mock.patch.multiple(
+            profiles_module,
+            PROFILE_DIR=self.directory,
+            PROFILE_FILE=self.directory / "profiles.json",
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def action(self, key):
+        return settings_to_action(PressSettings(input_type="keyboard", key=key))
+
+    def seed(self):
+        profiles_module.save_profiles(
+            {"Sequence": {"actions": [self.action("a"), self.action("b"), self.action("c")]}}
+        )
+
+    def stored_keys(self):
+        return [step["key"] for step in profiles_module.load_profiles()["Sequence"]["actions"]]
+
+    def test_the_helpers_keep_step_order_through_a_save(self):
+        self.seed()
+
+        steps = profiles_module.load_profiles()["Sequence"]["actions"]
+        reordered = profiles_module.move_step(profiles_module.move_step(steps, 2, -1), 0, 1)
+        profiles_module.save_profiles(
+            profiles_module.with_steps(profiles_module.load_profiles(), "Sequence", reordered)
+        )
+
+        self.assertEqual(self.stored_keys(), ["c", "a", "b"])
+
+    def test_a_removed_step_is_gone_from_disk_after_save(self):
+        self.seed()
+
+        steps = profiles_module.remove_step(
+            profiles_module.load_profiles()["Sequence"]["actions"], 1
+        )
+        profiles_module.save_profiles(
+            profiles_module.with_steps(profiles_module.load_profiles(), "Sequence", steps)
+        )
+
+        self.assertEqual(self.stored_keys(), ["a", "c"])
+
+    def test_replacing_a_step_persists_the_new_action(self):
+        self.seed()
+        replacement = settings_to_action(PressSettings(input_type="text", text="hello"))
+
+        steps = profiles_module.replace_step(
+            profiles_module.load_profiles()["Sequence"]["actions"], 0, replacement
+        )
+        profiles_module.save_profiles(
+            profiles_module.with_steps(profiles_module.load_profiles(), "Sequence", steps)
+        )
+
+        stored = profiles_module.load_profiles()["Sequence"]["actions"]
+        self.assertEqual(stored[0], replacement)
+        self.assertEqual(stored[1]["key"], "b")
+        self.assertEqual(list(stored[0]), list(self.action("a")))
+
+
+class StepLabelTests(unittest.TestCase):
+    def test_keyboard_step_names_modifiers_and_key(self):
+        action = settings_to_action(
+            PressSettings(input_type="keyboard", key="c", modifiers=["ctrl", "shift"])
+        )
+
+        self.assertEqual(describe_step(0, action), "1. Key Ctrl + Shift + C")
+
+    def test_mouse_step_names_the_button_and_the_place(self):
+        action = settings_to_action(
+            PressSettings(
+                input_type="mouse",
+                mouse_button="left",
+                use_fixed_position=True,
+                fixed_x=12,
+                fixed_y=34,
+            )
+        )
+
+        self.assertEqual(describe_step(2, action), "3. Mouse Left single click, at (12, 34)")
+
+    def test_text_step_shortens_a_long_string(self):
+        action = settings_to_action(PressSettings(input_type="text", text="x" * 50))
+
+        label = describe_step(0, action)
+
+        self.assertTrue(label.startswith("1. Type xxx"))
+        self.assertTrue(label.endswith("..."))
 
 
 class ProfileTextRoundTripTests(unittest.TestCase):
@@ -405,10 +554,206 @@ class MacroPlaybackTests(unittest.TestCase):
         player.assert_called_once()
 
 
+class ProfileStepDialogTests(unittest.TestCase):
+    """The dialog itself: selection, reordering, and what Save does to the file."""
+
+    def setUp(self):
+        try:
+            self.root = tk.Tk()
+        except tk.TclError as exc:
+            self.skipTest("Tk display unavailable: %s" % exc)
+        self.addCleanup(self.root.destroy)
+        self.directory = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.directory, ignore_errors=True)
+        patcher = mock.patch.multiple(
+            profiles_module,
+            PROFILE_DIR=self.directory,
+            PROFILE_FILE=self.directory / "profiles.json",
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        profiles_module.save_profiles(
+            {
+                "Sequence": {
+                    "actions": [self.step("a"), self.step("b"), self.step("c")]
+                },
+                "Solo": {"actions": [self.step("d")]},
+            }
+        )
+        with mock.patch.object(app_module.AutoClickerApp, "_start_hotkey_listener"), \
+             mock.patch.object(app_module.AutoClickerApp, "_check_for_updates"):
+            self.app = app_module.AutoClickerApp(self.root)
+        self.dialog = app_module.ProfileDialog(self.app)
+        self.addCleanup(self._close_dialog)
+
+    def _close_dialog(self):
+        try:
+            self.dialog.win.destroy()
+        except tk.TclError:
+            pass
+
+    def step(self, key):
+        return settings_to_action(PressSettings(input_type="keyboard", key=key))
+
+    def dialog_keys(self):
+        return [step["key"] for step in self.dialog.steps]
+
+    def stored_keys(self, name="Sequence"):
+        return [step["key"] for step in profiles_module.load_profiles()[name]["actions"]]
+
+    def test_the_list_shows_every_step_in_order(self):
+        self.dialog.select_profile("Sequence")
+
+        shown = [
+            self.dialog.step_list.get(index)
+            for index in range(self.dialog.step_list.size())
+        ]
+
+        self.assertEqual(
+            shown, ["1. Key A", "2. Key B", "3. Key C"]
+        )
+
+    def test_move_down_then_save_writes_the_new_order(self):
+        self.dialog.select_profile("Sequence")
+        self.dialog.select_step(0)
+
+        self.dialog.move_down()
+
+        self.assertEqual(self.dialog_keys(), ["b", "a", "c"])
+        self.assertTrue(self.dialog.unsaved_changes())
+        self.assertEqual(self.stored_keys(), ["a", "b", "c"])
+
+        self.dialog.save_steps()
+
+        self.assertFalse(self.dialog.unsaved_changes())
+        self.assertEqual(self.stored_keys(), ["b", "a", "c"])
+
+    def test_move_up_on_the_first_step_does_nothing(self):
+        self.dialog.select_profile("Sequence")
+        self.dialog.select_step(0)
+
+        self.dialog.move_up()
+
+        self.assertEqual(self.dialog_keys(), ["a", "b", "c"])
+        self.assertFalse(self.dialog.unsaved_changes())
+        self.assertIn("already first", self.dialog.preview_var.get())
+
+    def test_move_down_on_the_last_step_does_nothing(self):
+        self.dialog.select_profile("Sequence")
+        self.dialog.select_step(2)
+
+        self.dialog.move_down()
+
+        self.assertEqual(self.dialog_keys(), ["a", "b", "c"])
+        self.assertIn("already last", self.dialog.preview_var.get())
+
+    def test_remove_then_save_drops_the_step_from_disk(self):
+        self.dialog.select_profile("Sequence")
+        self.dialog.select_step(1)
+
+        self.dialog.remove_step()
+
+        self.assertEqual(self.dialog_keys(), ["a", "c"])
+        self.assertEqual(self.stored_keys(), ["a", "b", "c"])
+
+        self.dialog.save_steps()
+
+        self.assertEqual(self.stored_keys(), ["a", "c"])
+
+    def test_removing_the_only_step_leaves_an_empty_profile(self):
+        self.dialog.select_profile("Solo")
+        self.dialog.select_step(0)
+
+        self.dialog.remove_step()
+
+        self.assertEqual(self.dialog.steps, [])
+        self.assertEqual(self.dialog.step_list.get(0), "No steps yet - use Add action.")
+
+        self.dialog.save_steps()
+
+        self.assertEqual(self.stored_keys("Solo"), [])
+
+    def test_replace_with_the_current_action_persists_it(self):
+        self.dialog.select_profile("Sequence")
+        self.dialog.select_step(1)
+        self.app.input_type_var.set("Keyboard")
+        self.app.key_var.set("Enter")
+        self.app.modifier_vars["Ctrl"].set(True)
+
+        self.dialog.replace_step()
+        self.dialog.save_steps()
+
+        stored = profiles_module.load_profiles()["Sequence"]["actions"]
+        self.assertEqual(stored[1]["key"], "enter")
+        self.assertEqual(stored[1]["modifiers"], ["ctrl"])
+        self.assertEqual([step["key"] for step in stored], ["a", "enter", "c"])
+
+    def test_replace_with_no_step_selected_says_so(self):
+        self.dialog.select_profile("Sequence")
+
+        with mock.patch.object(app_module, "messagebox") as box:
+            self.dialog.replace_step()
+
+        self.assertEqual(box.showwarning.call_args.args[1], "Select the step to replace first.")
+        self.assertEqual(self.dialog_keys(), ["a", "b", "c"])
+        box.showerror.assert_not_called()
+
+    def test_an_invalid_current_action_keeps_its_own_message(self):
+        self.dialog.select_profile("Sequence")
+        self.dialog.select_step(0)
+        self.app.input_type_var.set("Text")
+        self.app.text_var.set("")
+
+        with mock.patch.object(app_module, "messagebox") as box:
+            self.dialog.replace_step()
+
+        self.assertEqual(
+            box.showerror.call_args.args[1], "Enter the text to type first."
+        )
+        self.assertEqual(self.dialog_keys(), ["a", "b", "c"])
+        self.assertFalse(self.dialog.unsaved_changes())
+
+    def test_closing_with_unsaved_edits_asks_and_writes_nothing(self):
+        self.dialog.select_profile("Sequence")
+        self.dialog.select_step(2)
+        self.dialog.remove_step()
+
+        with mock.patch.object(app_module, "messagebox") as box:
+            box.askyesno.return_value = True
+            self.dialog.close()
+
+        self.assertEqual(self.stored_keys(), ["a", "b", "c"])
+
+    def test_cancelling_the_close_discard_keeps_the_edits(self):
+        self.dialog.select_profile("Sequence")
+        self.dialog.select_step(2)
+        self.dialog.remove_step()
+
+        with mock.patch.object(app_module, "messagebox") as box:
+            box.askyesno.return_value = False
+            self.dialog.close()
+
+        self.assertTrue(self.dialog.unsaved_changes())
+        self.assertEqual(self.dialog_keys(), ["a", "b"])
+        self.assertEqual(self.stored_keys(), ["a", "b", "c"])
+
+    def test_saving_keeps_the_profile_json_shape(self):
+        self.dialog.select_profile("Sequence")
+        self.dialog.select_step(0)
+        self.dialog.move_down()
+        self.dialog.save_steps()
+
+        raw = json.loads((self.directory / "profiles.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(sorted(raw), ["Sequence", "Solo"])
+        self.assertEqual(list(raw["Sequence"]), ["actions"])
+        self.assertEqual(list(raw["Sequence"]["actions"][0]), list(self.step("a")))
+
+
 class VersionTests(unittest.TestCase):
     def test_app_reports_the_version_the_updater_checks(self):
-        self.assertEqual(updater.CURRENT_VERSION, "2.0.2")
-        self.assertEqual(APP_NAME, "AutoKeyPresser 2.0.2")
+        self.assertEqual(updater.CURRENT_VERSION, "2.0.3")
+        self.assertEqual(APP_NAME, "AutoKeyPresser 2.0.3")
 
 
 class UpdaterTests(unittest.TestCase):
