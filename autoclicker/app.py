@@ -2182,6 +2182,7 @@ class ProfileDialog:
         self.profiles = load_profiles()
         self.selected = None
         self.loaded = None
+        self.queued = []
         self.saved_steps = []
         self.steps = []
         self._syncing = False
@@ -2427,15 +2428,16 @@ class ProfileDialog:
 
     def _confirm_replacing(self, name):
         """True when nothing staged or stored is lost by Save current, or the user says so."""
-        if name == self.selected and self.unsaved_changes():
-            question = "Save current replaces the staged steps of '%s' with this action?" % name
-        else:
-            stored = len(self.profiles.get(name, {}).get("actions", []))
-            if stored < 2:
-                return True
-            question = (
-                "Save current replaces the %d steps of '%s' with this action?" % (stored, name)
-            )
+        if self.unsaved_changes():
+            question = "Save current drops the staged steps of '%s' for this action?" % self.selected
+            return messagebox.askyesno(APP_NAME, question, parent=self.win)
+        stored = len(self.profiles.get(name, {}).get("actions", []))
+        if stored < 2:
+            return True
+        question = "Save current replaces the %d steps of '%s' with this action?" % (
+            stored,
+            name,
+        )
         return messagebox.askyesno(APP_NAME, question, parent=self.win)
 
     def _say(self, message, error=False):
@@ -2501,10 +2503,17 @@ class ProfileDialog:
         self.profiles = profiles.with_steps(self.profiles, self.selected, self.steps)
         save_profiles(self.profiles)
         self.saved_steps = copy.deepcopy(self.steps)
-        if self.loaded == self.selected:
+        if (
+            self.loaded == self.selected
+            and self.queued
+            and self.app.pending_actions == self.queued
+        ):
             self.app.pending_actions = (
                 copy.deepcopy(self.steps) if len(self.steps) > 1 else []
             )
+            self.queued = copy.deepcopy(self.app.pending_actions)
+        else:
+            self.loaded = None
         self._render()
         self.app.status_var.set("Steps saved: %s" % self.selected)
 
@@ -2578,6 +2587,7 @@ class ProfileDialog:
         self.app._apply_action(actions[0])
         self.app.pending_actions = actions if len(actions) > 1 else []
         self.loaded = name
+        self.queued = copy.deepcopy(self.app.pending_actions)
         self.app.status_var.set("Profile loaded: %s" % name)
         if run:
             self.win.destroy()

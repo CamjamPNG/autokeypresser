@@ -788,7 +788,7 @@ class ProfileStepDialogTests(unittest.TestCase):
 
         self.assertEqual(
             box.askyesno.call_args.args[1],
-            "Save current replaces the staged steps of 'Sequence' with this action?",
+            "Save current drops the staged steps of 'Sequence' for this action?",
         )
         self.assertEqual(self.stored_keys(), ["a", "b", "c"])
         self.assertEqual(self.dialog_keys(), ["b", "a", "c"])
@@ -820,6 +820,40 @@ class ProfileStepDialogTests(unittest.TestCase):
         self.assertTrue(self.dialog.win.winfo_exists())
         self.assertEqual(self.dialog_keys(), ["a", "b"])
         self.assertEqual(self.stored_keys(), ["a", "b", "c"])
+
+    def test_save_current_asks_about_staged_steps_under_a_new_name(self):
+        self.dialog.select_profile("Sequence")
+        self.dialog.select_step(0)
+        self.dialog.move_down()
+        self.app.input_type_var.set("Keyboard")
+        self.app.key_var.set("Enter")
+        self.dialog.name_var.set("Fresh")
+
+        with mock.patch.object(app_module, "messagebox") as box:
+            box.askyesno.return_value = False
+            self.dialog.save_current()
+
+        self.assertEqual(
+            box.askyesno.call_args.args[1],
+            "Save current drops the staged steps of 'Sequence' for this action?",
+        )
+        self.assertNotIn("Fresh", profiles_module.load_profiles())
+        self.assertEqual(self.dialog_keys(), ["b", "a", "c"])
+        self.assertTrue(self.dialog.unsaved_changes())
+
+    def test_saving_after_a_start_does_not_requeue_the_sequence(self):
+        self.dialog.select_profile("Sequence")
+        self.dialog.load_profile()
+        self.dialog.select_step(0)
+        self.dialog.move_down()
+        with mock.patch.object(app_module, "PressEngine"):
+            self.app._start()
+        self.assertEqual(self.app.pending_actions, [])
+
+        self.dialog.save_steps()
+
+        self.assertEqual(self.app.pending_actions, [])
+        self.assertEqual(self.stored_keys(), ["b", "a", "c"])
 
     def test_saving_a_loaded_profile_requeues_the_new_order(self):
         self.dialog.select_profile("Sequence")
