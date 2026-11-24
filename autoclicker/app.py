@@ -1,3 +1,4 @@
+import copy
 import queue
 import sys
 import tkinter as tk
@@ -8,11 +9,11 @@ import webbrowser
 from . import keys as keymod
 from .config import load_config, save_config
 from .engine import PressEngine, PressSettings
-from . import macro, themes
+from . import macro, profiles, themes
 from .profiles import load_profiles, save_profiles
 from . import updater
 
-APP_NAME = "AutoKeyPresser 2.0.2"
+APP_NAME = "AutoKeyPresser 2.0.3"
 
 # The action card labels map one-to-one onto the engine's input_type values.
 INPUT_TYPES = {"Mouse": "mouse", "Keyboard": "keyboard", "Text": "text"}
@@ -82,6 +83,37 @@ def settings_to_action(settings):
         value = getattr(settings, name)
         action[name] = list(value) if isinstance(value, list) else value
     return action
+
+
+MODIFIER_LABELS = {"command": "Win/Cmd"}
+
+
+def describe_step(index, action):
+    """One numbered line naming a profile step for the editor's list."""
+    kind = action.get("input_type", "mouse")
+    if kind == "text":
+        text = str(action.get("text", ""))
+        label = "Type %s" % (text if len(text) <= 40 else text[:37] + "...")
+    elif kind == "keyboard":
+        mapped = next((d for d, k in keymod.KEY_MAP if k == action.get("key")), None)
+        key = mapped or str(action.get("key") or "?").upper()
+        modifiers = [
+            MODIFIER_LABELS.get(name, str(name).capitalize())
+            for name in action.get("modifiers", [])
+        ]
+        label = "Key %s" % " + ".join(modifiers + [key])
+    else:
+        button = str(action.get("mouse_button", "left")).capitalize()
+        clicks = "double" if action.get("click_type") == "double" else "single"
+        if action.get("use_fixed_position"):
+            where = "at (%s, %s)" % (action.get("fixed_x", 0), action.get("fixed_y", 0))
+        else:
+            where = "at the cursor"
+        label = "Mouse %s %s click, %s" % (button, clicks, where)
+    if action.get("hold_mode") and kind != "text":
+        held = round(float(action.get("hold_duration_seconds", 0.05)) * 1000)
+        label += " · hold %d ms" % held
+    return "%d. %s" % (index + 1, label)
 
 
 def _mix_color(color, other, amount):
@@ -829,7 +861,7 @@ class AutoClickerApp:
         ttk.Label(footer, textvariable=self.status_var, style="Muted.TLabel").grid(
             row=0, column=1, sticky="w"
         )
-        ttk.Label(footer, text="v2.0.2  •  local by design", style="Quiet.TLabel").grid(
+        ttk.Label(footer, text="v2.0.3  •  local by design", style="Quiet.TLabel").grid(
             row=0, column=2, sticky="e"
         )
 
@@ -2135,30 +2167,54 @@ class AutoClickerApp:
         self._update_status_visual()
 
     def _open_profiles(self):
-        profiles = load_profiles()
-        win = tk.Toplevel(self.root)
-        win.title("Profiles and sequences")
-        win.configure(bg=self.current_theme["colors"]["window"])
-        win.resizable(False, False)
-        win.transient(self.root)
-        win.grab_set()
-        self._center_dialog(win, 760, 500)
+        return ProfileDialog(self)
 
-        body = ttk.Frame(win, style="App.TFrame", padding=24)
+
+class ProfileDialog:
+    """Editable view of the saved profiles: pick one, reorder its steps, save.
+
+    Step order lives in the pure helpers in autoclicker.profiles; this class only
+    renders the working list and decides when to write it back.
+    """
+
+    def __init__(self, app):
+        self.app = app
+        self.profiles = load_profiles()
+        self.selected = None
+        self.loaded = None
+        self.queued = []
+        self.saved_steps = []
+        self.steps = []
+        self._syncing = False
+        self._build()
+
+    # ------------------------------------------------------------- widgets
+    def _build(self):
+        app = self.app
+        colors = app.current_theme["colors"]
+        win = tk.Toplevel(app.root)
+        self.win = win
+        win.title("Profiles and sequences")
+        win.configure(bg=colors["window"])
+        win.resizable(False, False)
+        win.transient(app.root)
+        win.grab_set()
+        app._center_dialog(win, 800, 720)
+
+        body = ttk.Frame(win, style="App.TFrame", padding=20)
         body.pack(fill="both", expand=True)
         ttk.Label(body, text="Profiles", style="Title.TLabel").grid(
             row=0, column=0, columnspan=2, sticky="w"
         )
         ttk.Label(
             body,
-            text="Save this setup once, then launch it in a click.",
+            text="Save this setup once, then edit its steps or launch it in a click.",
             style="Muted.TLabel",
-        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(3, 20))
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(3, 14))
         body.grid_columnconfigure(0, weight=2)
         body.grid_columnconfigure(1, weight=3)
         body.grid_rowconfigure(2, weight=1)
 
-        colors = self.current_theme["colors"]
         library = ttk.Frame(body, style="Card.TFrame", padding=14)
         library.grid(row=2, column=0, sticky="nsew", padx=(0, 9))
         library.grid_columnconfigure(0, weight=1)
@@ -2166,10 +2222,10 @@ class AutoClickerApp:
         ttk.Label(library, text="SAVED PROFILES", style="FieldLabel.TLabel").grid(
             row=0, column=0, sticky="w", pady=(0, 10)
         )
-        names = tk.StringVar(value=tuple(sorted(profiles)))
-        listing = tk.Listbox(
+        self.names = tk.StringVar(value=tuple(sorted(self.profiles)))
+        self.listing = tk.Listbox(
             library,
-            listvariable=names,
+            listvariable=self.names,
             exportselection=False,
             activestyle="none",
             relief=tk.FLAT,
@@ -2181,165 +2237,392 @@ class AutoClickerApp:
             fg=colors["text"],
             selectbackground=colors["accent"],
             selectforeground=colors["accent_text"],
-            font=(self.body_font, 10),
+            font=(app.body_font, 10),
         )
-        listing.grid(row=1, column=0, sticky="nsew")
+        self.listing.grid(row=1, column=0, sticky="nsew")
+        self.listing.bind("<<ListboxSelect>>", self._on_profile_select)
 
         editor = ttk.Frame(body, style="Card.TFrame", padding=18)
         editor.grid(row=2, column=1, sticky="nsew", padx=(9, 0))
         editor.grid_columnconfigure(0, weight=1)
-        ttk.Label(editor, text="PROFILE DETAILS", style="FieldLabel.TLabel").grid(
+        editor.grid_rowconfigure(4, weight=1)
+        ttk.Label(editor, text="PROFILE STEPS", style="FieldLabel.TLabel").grid(
             row=0, column=0, sticky="w"
         )
         ttk.Label(editor, text="Name", style="CardLabel.TLabel").grid(
-            row=1, column=0, sticky="w", pady=(16, 6)
+            row=1, column=0, sticky="w", pady=(10, 4)
         )
-        name_var = tk.StringVar()
-        ttk.Entry(editor, textvariable=name_var).grid(row=2, column=0, sticky="ew")
-        detail_var = tk.StringVar(value="Create a profile from the current action.")
-        detail = ttk.Frame(editor, style="Inset.TFrame", padding=(14, 12))
-        detail.grid(row=3, column=0, sticky="ew", pady=(18, 0))
+        self.name_var = tk.StringVar()
+        ttk.Entry(editor, textvariable=self.name_var).grid(row=2, column=0, sticky="ew")
+        self.state_var = tk.StringVar()
+        ttk.Label(editor, textvariable=self.state_var, style="CardMuted.TLabel").grid(
+            row=3, column=0, sticky="w", pady=(8, 4)
+        )
+        self.step_list = tk.Listbox(
+            editor,
+            exportselection=False,
+            activestyle="none",
+            height=7,
+            relief=tk.FLAT,
+            bd=0,
+            highlightthickness=1,
+            highlightbackground=colors["border"],
+            highlightcolor=colors["accent"],
+            bg=colors["input"],
+            fg=colors["text"],
+            selectbackground=colors["accent"],
+            selectforeground=colors["accent_text"],
+            font=(app.body_font, 10),
+        )
+        self.step_list.grid(row=4, column=0, sticky="nsew")
+        self.step_list.bind("<<ListboxSelect>>", self._on_step_select)
+
+        self.preview_var = tk.StringVar()
         ttk.Label(
-            detail,
-            textvariable=detail_var,
+            editor,
+            textvariable=self.preview_var,
             style="Summary.TLabel",
-            wraplength=330,
+            wraplength=360,
             justify="left",
-        ).pack(anchor="w")
+        ).grid(row=5, column=0, sticky="ew", pady=(8, 0))
 
-        def selected_name():
-            selected = listing.curselection()
-            return listing.get(selected[0]) if selected else name_var.get().strip()
-
-        def describe(_event=None):
-            selected = listing.curselection()
-            if not selected:
-                return
-            name = listing.get(selected[0])
-            name_var.set(name)
-            count = len(profiles.get(name, {}).get("actions", []))
-            detail_var.set(
-                "%s contains %d action%s. Load it to edit, or run the full sequence now."
-                % (name, count, "" if count == 1 else "s")
-            )
-
-        listing.bind("<<ListboxSelect>>", describe)
-
-        def refresh(select_name=None):
-            ordered = sorted(profiles)
-            names.set(tuple(ordered))
-            if select_name in ordered:
-                index = ordered.index(select_name)
-                listing.selection_clear(0, tk.END)
-                listing.selection_set(index)
-                listing.see(index)
-                describe()
-            elif not ordered:
-                detail_var.set("No saved profiles yet. Name the current setup to create one.")
-
-        def save_current():
-            name = name_var.get().strip()
-            if not name:
-                messagebox.showerror(APP_NAME, "Enter a profile name.", parent=win)
-                return
-            try:
-                action = self._current_action()
-            except InvalidSettings as exc:
-                messagebox.showerror(APP_NAME, str(exc), parent=win)
-                return
-            except ValueError:
-                messagebox.showerror(APP_NAME, "Please enter valid values first.", parent=win)
-                return
-            profiles[name] = {"actions": [action]}
-            save_profiles(profiles)
-            refresh(name)
-            self.status_var.set("Profile saved: %s" % name)
-
-        def add_action():
-            name = selected_name()
-            if not name:
-                messagebox.showerror(APP_NAME, "Select or enter a profile name.", parent=win)
-                return
-            try:
-                action = self._current_action()
-            except InvalidSettings as exc:
-                messagebox.showerror(APP_NAME, str(exc), parent=win)
-                return
-            except ValueError:
-                messagebox.showerror(APP_NAME, "Please enter valid values first.", parent=win)
-                return
-            profiles.setdefault(name, {"actions": []}).setdefault("actions", []).append(action)
-            save_profiles(profiles)
-            name_var.set(name)
-            refresh(name)
-            self.status_var.set("Action added to %s" % name)
-
-        def load_profile(run=False):
-            name = selected_name()
-            profile = profiles.get(name, {})
-            actions = profile.get("actions", [])
-            if not actions:
-                return
-            self._apply_action(actions[0])
-            self.pending_actions = actions if len(actions) > 1 else []
-            self.status_var.set("Profile loaded: %s" % name)
-            if run:
-                win.destroy()
-                self._start()
-
-        def delete_profile():
-            name = selected_name()
-            if name in profiles and messagebox.askyesno(
-                APP_NAME,
-                "Delete the profile '%s'?" % name,
-                parent=win,
-            ):
-                del profiles[name]
-                save_profiles(profiles)
-                refresh()
-                name_var.set("")
-                self.status_var.set("Profile deleted")
+        reorder = ttk.Frame(editor, style="Panel.TFrame")
+        reorder.grid(row=6, column=0, sticky="ew", pady=(10, 0))
+        for column in range(3):
+            reorder.grid_columnconfigure(column, weight=1)
+        ttk.Button(
+            reorder, text="Move up", style="Secondary.TButton", command=self.move_up
+        ).grid(row=0, column=0, sticky="ew")
+        ttk.Button(
+            reorder, text="Move down", style="Secondary.TButton", command=self.move_down
+        ).grid(row=0, column=1, sticky="ew", padx=6)
+        ttk.Button(
+            reorder, text="Remove", style="Record.TButton", command=self.remove_step
+        ).grid(row=0, column=2, sticky="ew")
+        ttk.Button(
+            reorder,
+            text="Replace with current action",
+            style="Ghost.TButton",
+            command=self.replace_step,
+        ).grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        ttk.Button(
+            reorder,
+            text="Save steps",
+            style="Primary.TButton",
+            command=self.save_steps,
+        ).grid(row=1, column=2, sticky="ew", pady=(8, 0))
 
         primary_actions = ttk.Frame(editor, style="Panel.TFrame")
-        primary_actions.grid(row=4, column=0, sticky="ew", pady=(20, 0))
+        primary_actions.grid(row=7, column=0, sticky="ew", pady=(10, 0))
         ttk.Button(
             primary_actions,
             text="Save current",
             style="Secondary.TButton",
-            command=save_current,
+            command=self.save_current,
         ).pack(side="left")
         ttk.Button(
             primary_actions,
             text="Add action",
             style="Ghost.TButton",
-            command=add_action,
+            command=self.add_action,
         ).pack(side="left", padx=(8, 0))
         ttk.Button(
             primary_actions,
             text="Delete",
             style="Record.TButton",
-            command=delete_profile,
+            command=self.delete_profile,
         ).pack(side="right")
 
         footer = ttk.Frame(body, style="App.TFrame")
-        footer.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(18, 0))
+        footer.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(12, 0))
         ttk.Button(
             footer,
             text="Close",
             style="Ghost.TButton",
-            command=win.destroy,
+            command=self.close,
         ).pack(side="left")
         ttk.Button(
             footer,
             text="Load profile",
             style="Secondary.TButton",
-            command=load_profile,
+            command=self.load_profile,
         ).pack(side="right", padx=(8, 0))
         ttk.Button(
             footer,
             text="Run sequence",
             style="Primary.TButton",
-            command=lambda: load_profile(True),
+            command=lambda: self.load_profile(True),
         ).pack(side="right")
-        refresh()
-        win.bind("<Escape>", lambda _event: win.destroy())
+        win.bind("<Escape>", lambda _event: self.close())
+        win.protocol("WM_DELETE_WINDOW", self.close)
+        self._render()
+
+    # -------------------------------------------------------------- state
+    def unsaved_changes(self):
+        return self.steps != self.saved_steps
+
+    def selected_name(self):
+        chosen = self.listing.curselection()
+        return self.listing.get(chosen[0]) if chosen else self.name_var.get().strip()
+
+    def selected_index(self):
+        chosen = self.step_list.curselection()
+        if not self.steps or not chosen:
+            return None
+        return chosen[0]
+
+    def _highlight(self, name):
+        """Move the library selection to name without touching the editor."""
+        ordered = sorted(self.profiles)
+        self._syncing = True
+        self.listing.selection_clear(0, tk.END)
+        if name in ordered:
+            index = ordered.index(name)
+            self.listing.selection_set(index)
+            self.listing.see(index)
+        self._syncing = False
+
+    def select_profile(self, name):
+        """Highlight name in the library and load its steps into the editor."""
+        self._highlight(name)
+        self.selected = name if name in self.profiles else None
+        self.name_var.set(name or "")
+        self.saved_steps = copy.deepcopy(
+            self.profiles.get(self.selected or "", {}).get("actions", [])
+        )
+        self.steps = copy.deepcopy(self.saved_steps)
+        self._render()
+
+    def select_step(self, index):
+        self.step_list.selection_clear(0, tk.END)
+        if 0 <= index < len(self.steps):
+            self.step_list.selection_set(index)
+            self.step_list.see(index)
+        self._render_preview()
+
+    def _on_profile_select(self, _event=None):
+        if self._syncing:
+            return
+        chosen = self.listing.curselection()
+        if not chosen:
+            return
+        name = self.listing.get(chosen[0])
+        if name == self.selected:
+            return
+        if not self._discard_pending():
+            self._highlight(self.selected)
+            return
+        self.select_profile(name)
+
+    def _on_step_select(self, _event=None):
+        self._render_preview()
+
+    def _discard_pending(self):
+        if not self.unsaved_changes():
+            return True
+        return messagebox.askyesno(
+            APP_NAME,
+            "Discard the unsaved step changes to '%s'?" % self.selected,
+            parent=self.win,
+        )
+
+    def _confirm_replacing(self, name):
+        """True when nothing staged or stored is lost by Save current, or the user says so."""
+        if self.unsaved_changes():
+            question = "Save current drops the staged steps of '%s' for this action?" % self.selected
+            return messagebox.askyesno(APP_NAME, question, parent=self.win)
+        stored = len(self.profiles.get(name, {}).get("actions", []))
+        if stored < 2:
+            return True
+        question = "Save current replaces the %d steps of '%s' with this action?" % (
+            stored,
+            name,
+        )
+        return messagebox.askyesno(APP_NAME, question, parent=self.win)
+
+    def _say(self, message, error=False):
+        box = messagebox.showerror if error else messagebox.showwarning
+        box(APP_NAME, message, parent=self.win)
+
+    def _current_action(self):
+        try:
+            return self.app._current_action()
+        except InvalidSettings as exc:
+            self._say(str(exc), error=True)
+        except ValueError:
+            self._say("Please enter valid values first.", error=True)
+        return None
+
+    # ------------------------------------------------------------ editing
+    def _move(self, offset):
+        index = self.selected_index()
+        if index is None:
+            self._say("Select the step to move first.")
+            return
+        target = index + offset
+        if not 0 <= target < len(self.steps):
+            self.preview_var.set(
+                "Step %d is already %s." % (index + 1, "first" if offset < 0 else "last")
+            )
+            return
+        self.steps = profiles.move_step(self.steps, index, offset)
+        self._render()
+        self.select_step(target)
+
+    def move_up(self):
+        self._move(-1)
+
+    def move_down(self):
+        self._move(1)
+
+    def remove_step(self):
+        index = self.selected_index()
+        if index is None:
+            self._say("Select the step to remove first.")
+            return
+        self.steps = profiles.remove_step(self.steps, index)
+        self._render()
+        self.select_step(min(index, len(self.steps) - 1))
+
+    def replace_step(self):
+        index = self.selected_index()
+        if index is None:
+            self._say("Select the step to replace first.")
+            return
+        action = self._current_action()
+        if action is None:
+            return
+        self.steps = profiles.replace_step(self.steps, index, action)
+        self._render()
+        self.select_step(index)
+
+    def save_steps(self):
+        if self.selected is None:
+            self._say("Select a saved profile to save its steps.")
+            return
+        self.profiles = profiles.with_steps(self.profiles, self.selected, self.steps)
+        save_profiles(self.profiles)
+        self.saved_steps = copy.deepcopy(self.steps)
+        if (
+            self.loaded == self.selected
+            and self.queued
+            and self.app.pending_actions == self.queued
+        ):
+            self.app.pending_actions = (
+                copy.deepcopy(self.steps) if len(self.steps) > 1 else []
+            )
+            self.queued = copy.deepcopy(self.app.pending_actions)
+        else:
+            self.loaded = None
+        self._render()
+        self.app.status_var.set("Steps saved: %s" % self.selected)
+
+    def save_current(self):
+        name = self.name_var.get().strip()
+        if not name:
+            self._say("Enter a profile name.", error=True)
+            return
+        action = self._current_action()
+        if action is None:
+            return
+        if not self._confirm_replacing(name):
+            return
+        self.profiles = profiles.with_steps(self.profiles, name, [action])
+        save_profiles(self.profiles)
+        self.names.set(tuple(sorted(self.profiles)))
+        self.select_profile(name)
+        self.app.status_var.set("Profile saved: %s" % name)
+
+    def add_action(self):
+        name = self.selected_name()
+        if not name:
+            self._say("Select or enter a profile name.", error=True)
+            return
+        action = self._current_action()
+        if action is None:
+            return
+        staged = name == self.selected and self.unsaved_changes()
+        if name == self.selected:
+            steps = copy.deepcopy(self.steps)
+        else:
+            steps = copy.deepcopy(self.profiles.get(name, {}).get("actions", []))
+        steps.append(action)
+        self.profiles = profiles.with_steps(self.profiles, name, steps)
+        save_profiles(self.profiles)
+        self.names.set(tuple(sorted(self.profiles)))
+        self.select_profile(name)
+        self.select_step(len(steps) - 1)
+        self.app.status_var.set(
+            "Action added to %s%s"
+            % (name, " - staged step changes were saved too" if staged else "")
+        )
+
+    def delete_profile(self):
+        name = self.selected_name()
+        if name not in self.profiles:
+            self._say("Select a saved profile to delete.", error=True)
+            return
+        if not messagebox.askyesno(
+            APP_NAME, "Delete the profile '%s'?" % name, parent=self.win
+        ):
+            return
+        del self.profiles[name]
+        save_profiles(self.profiles)
+        self.names.set(tuple(sorted(self.profiles)))
+        self.select_profile(None)
+        self.app.status_var.set("Profile deleted")
+
+    # ------------------------------------------------------------ actions
+    def load_profile(self, run=False):
+        name = self.selected_name()
+        actions = list(self.profiles.get(name, {}).get("actions", []))
+        if not actions:
+            self._say(
+                "'%s' has no steps to load." % name if name else "Select a profile first.",
+                error=True,
+            )
+            return
+        if not self._discard_pending():
+            return
+        self.app._apply_action(actions[0])
+        self.app.pending_actions = actions if len(actions) > 1 else []
+        self.loaded = name
+        self.queued = copy.deepcopy(self.app.pending_actions)
+        self.app.status_var.set("Profile loaded: %s" % name)
+        if run:
+            self.win.destroy()
+            self.app._start()
+
+    def close(self):
+        if not self._discard_pending():
+            return
+        self.win.destroy()
+
+    # ------------------------------------------------------------ drawing
+    def _render(self):
+        self.step_list.delete(0, tk.END)
+        if not self.steps:
+            self.step_list.insert(tk.END, "No steps yet - use Add action.")
+        for index, action in enumerate(self.steps):
+            self.step_list.insert(tk.END, describe_step(index, action))
+        self._render_state()
+        self._render_preview()
+
+    def _render_state(self):
+        if self.selected is None:
+            self.state_var.set("Select a saved profile to edit its steps.")
+        elif self.unsaved_changes():
+            self.state_var.set("Unsaved changes - Save steps writes them to disk.")
+        else:
+            count = len(self.steps)
+            self.state_var.set(
+                "%s on disk: %d step%s."
+                % (self.selected, count, "" if count == 1 else "s")
+            )
+
+    def _render_preview(self):
+        index = self.selected_index()
+        if index is None:
+            self.preview_var.set("Select a step to move, remove, or replace it.")
+        else:
+            self.preview_var.set("%s selected." % describe_step(index, self.steps[index]))
