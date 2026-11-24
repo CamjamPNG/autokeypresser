@@ -1,3 +1,4 @@
+import copy
 import json
 from pathlib import Path
 
@@ -62,6 +63,6 @@ def with_steps(profiles, name, actions):
     """
     updated = dict(profiles)
     profile = dict(updated.get(name) or {})
-    profile["actions"] = list(actions)
+    profile["actions"] = copy.deepcopy(list(actions))
     updated[name] = profile
     return updated

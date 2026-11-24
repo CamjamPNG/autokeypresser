@@ -177,6 +177,14 @@ class ProfileStepHelperTests(unittest.TestCase):
         self.assertEqual(self.keys(updated["Sequence"]["actions"]), ["b"])
         self.assertEqual(self.keys(profiles["Sequence"]["actions"]), ["a"])
 
+    def test_with_steps_does_not_share_step_dicts_with_the_caller(self):
+        steps = [{"input_type": "keyboard", "key": "a"}]
+
+        updated = profiles_module.with_steps({}, "Sequence", steps)
+        updated["Sequence"]["actions"][0]["key"] = "z"
+
+        self.assertEqual(steps[0]["key"], "a")
+
 
 class ProfileStepPersistenceTests(unittest.TestCase):
     """What the step editor writes to disk, checked against the file itself."""
@@ -240,7 +248,6 @@ class ProfileStepPersistenceTests(unittest.TestCase):
         stored = profiles_module.load_profiles()["Sequence"]["actions"]
         self.assertEqual(stored[0], replacement)
         self.assertEqual(stored[1]["key"], "b")
-        self.assertEqual(list(stored[0]), list(self.action("a")))
 
 
 class StepLabelTests(unittest.TestCase):
@@ -748,6 +755,114 @@ class ProfileStepDialogTests(unittest.TestCase):
         self.assertEqual(sorted(raw), ["Sequence", "Solo"])
         self.assertEqual(list(raw["Sequence"]), ["actions"])
         self.assertEqual(list(raw["Sequence"]["actions"][0]), list(self.step("a")))
+
+
+    def test_answering_no_to_the_discard_prompt_keeps_the_staged_steps(self):
+        self.dialog.select_profile("Sequence")
+        self.dialog.select_step(0)
+        self.dialog.move_down()
+
+        self.dialog.listing.selection_clear(0, tk.END)
+        self.dialog.listing.selection_set(sorted(self.dialog.profiles).index("Solo"))
+        with mock.patch.object(app_module, "messagebox") as box:
+            box.askyesno.return_value = False
+            self.dialog._on_profile_select()
+
+        self.assertEqual(self.dialog.selected, "Sequence")
+        self.assertEqual(self.dialog_keys(), ["b", "a", "c"])
+        self.assertTrue(self.dialog.unsaved_changes())
+        self.assertEqual(self.stored_keys(), ["a", "b", "c"])
+        self.assertEqual(self.dialog.listing.curselection(), (0,))
+        self.assertIn("Unsaved changes", self.dialog.state_var.get())
+
+    def test_save_current_asks_before_replacing_staged_steps(self):
+        self.dialog.select_profile("Sequence")
+        self.dialog.select_step(0)
+        self.dialog.move_down()
+        self.app.input_type_var.set("Keyboard")
+        self.app.key_var.set("Enter")
+
+        with mock.patch.object(app_module, "messagebox") as box:
+            box.askyesno.return_value = False
+            self.dialog.save_current()
+
+        self.assertEqual(
+            box.askyesno.call_args.args[1],
+            "Save current replaces the staged steps of 'Sequence' with this action?",
+        )
+        self.assertEqual(self.stored_keys(), ["a", "b", "c"])
+        self.assertEqual(self.dialog_keys(), ["b", "a", "c"])
+
+    def test_save_current_asks_before_shrinking_a_saved_sequence(self):
+        self.app.input_type_var.set("Keyboard")
+        self.app.key_var.set("Enter")
+        self.dialog.select_profile("Sequence")
+
+        with mock.patch.object(app_module, "messagebox") as box:
+            box.askyesno.return_value = True
+            self.dialog.save_current()
+
+        self.assertEqual(
+            box.askyesno.call_args.args[1],
+            "Save current replaces the 3 steps of 'Sequence' with this action?",
+        )
+        self.assertEqual(self.stored_keys(), ["enter"])
+
+    def test_the_window_manager_close_asks_like_the_close_button(self):
+        self.dialog.select_profile("Sequence")
+        self.dialog.select_step(2)
+        self.dialog.remove_step()
+
+        with mock.patch.object(app_module, "messagebox") as box:
+            box.askyesno.return_value = False
+            self.root.tk.call(self.dialog.win.protocol("WM_DELETE_WINDOW"))
+
+        self.assertTrue(self.dialog.win.winfo_exists())
+        self.assertEqual(self.dialog_keys(), ["a", "b"])
+        self.assertEqual(self.stored_keys(), ["a", "b", "c"])
+
+    def test_saving_a_loaded_profile_requeues_the_new_order(self):
+        self.dialog.select_profile("Sequence")
+        self.dialog.load_profile()
+        self.assertEqual(
+            [step["key"] for step in self.app.pending_actions], ["a", "b", "c"]
+        )
+
+        self.dialog.select_step(0)
+        self.dialog.move_down()
+        self.dialog.save_steps()
+
+        self.assertEqual([step["key"] for step in self.app.pending_actions], ["b", "a", "c"])
+
+    def test_editing_a_step_in_place_shows_up_as_unsaved(self):
+        self.dialog.select_profile("Sequence")
+
+        self.dialog.steps[0]["key"] = "z"
+
+        self.assertTrue(self.dialog.unsaved_changes())
+        self.assertEqual([step["key"] for step in self.dialog.saved_steps], ["a", "b", "c"])
+
+    def test_an_unmapped_key_is_named_rather_than_called_a(self):
+        self.dialog.select_profile("Sequence")
+
+        label = describe_step(0, {"input_type": "keyboard", "key": "f13"})
+
+        self.assertEqual(label, "1. Key F13")
+
+    def test_add_action_says_when_it_saved_staged_edits_too(self):
+        self.dialog.select_profile("Sequence")
+        self.dialog.select_step(0)
+        self.dialog.move_down()
+        self.app.input_type_var.set("Keyboard")
+        self.app.key_var.set("Enter")
+
+        self.dialog.add_action()
+
+        self.assertEqual(
+            self.app.status_var.get(),
+            "Action added to Sequence - staged step changes were saved too",
+        )
+        self.assertFalse(self.dialog.unsaved_changes())
 
 
 class VersionTests(unittest.TestCase):

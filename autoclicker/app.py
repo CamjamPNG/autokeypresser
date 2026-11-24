@@ -1,3 +1,4 @@
+import copy
 import queue
 import sys
 import tkinter as tk
@@ -94,7 +95,8 @@ def describe_step(index, action):
         text = str(action.get("text", ""))
         label = "Type %s" % (text if len(text) <= 40 else text[:37] + "...")
     elif kind == "keyboard":
-        key = next((d for d, k in keymod.KEY_MAP if k == action.get("key")), "A")
+        mapped = next((d for d, k in keymod.KEY_MAP if k == action.get("key")), None)
+        key = mapped or str(action.get("key") or "?").upper()
         modifiers = [
             MODIFIER_LABELS.get(name, str(name).capitalize())
             for name in action.get("modifiers", [])
@@ -2179,6 +2181,7 @@ class ProfileDialog:
         self.app = app
         self.profiles = load_profiles()
         self.selected = None
+        self.loaded = None
         self.saved_steps = []
         self.steps = []
         self._syncing = False
@@ -2350,6 +2353,7 @@ class ProfileDialog:
             command=lambda: self.load_profile(True),
         ).pack(side="right")
         win.bind("<Escape>", lambda _event: self.close())
+        win.protocol("WM_DELETE_WINDOW", self.close)
         self._render()
 
     # -------------------------------------------------------------- state
@@ -2366,8 +2370,8 @@ class ProfileDialog:
             return None
         return chosen[0]
 
-    def select_profile(self, name):
-        """Highlight name in the library and load its steps into the editor."""
+    def _highlight(self, name):
+        """Move the library selection to name without touching the editor."""
         ordered = sorted(self.profiles)
         self._syncing = True
         self.listing.selection_clear(0, tk.END)
@@ -2376,10 +2380,16 @@ class ProfileDialog:
             self.listing.selection_set(index)
             self.listing.see(index)
         self._syncing = False
+
+    def select_profile(self, name):
+        """Highlight name in the library and load its steps into the editor."""
+        self._highlight(name)
         self.selected = name if name in self.profiles else None
         self.name_var.set(name or "")
-        self.saved_steps = list(self.profiles.get(self.selected or "", {}).get("actions", []))
-        self.steps = list(self.saved_steps)
+        self.saved_steps = copy.deepcopy(
+            self.profiles.get(self.selected or "", {}).get("actions", [])
+        )
+        self.steps = copy.deepcopy(self.saved_steps)
         self._render()
 
     def select_step(self, index):
@@ -2399,7 +2409,7 @@ class ProfileDialog:
         if name == self.selected:
             return
         if not self._discard_pending():
-            self.select_profile(self.selected)
+            self._highlight(self.selected)
             return
         self.select_profile(name)
 
@@ -2414,6 +2424,19 @@ class ProfileDialog:
             "Discard the unsaved step changes to '%s'?" % self.selected,
             parent=self.win,
         )
+
+    def _confirm_replacing(self, name):
+        """True when nothing staged or stored is lost by Save current, or the user says so."""
+        if name == self.selected and self.unsaved_changes():
+            question = "Save current replaces the staged steps of '%s' with this action?" % name
+        else:
+            stored = len(self.profiles.get(name, {}).get("actions", []))
+            if stored < 2:
+                return True
+            question = (
+                "Save current replaces the %d steps of '%s' with this action?" % (stored, name)
+            )
+        return messagebox.askyesno(APP_NAME, question, parent=self.win)
 
     def _say(self, message, error=False):
         box = messagebox.showerror if error else messagebox.showwarning
@@ -2477,7 +2500,11 @@ class ProfileDialog:
             return
         self.profiles = profiles.with_steps(self.profiles, self.selected, self.steps)
         save_profiles(self.profiles)
-        self.saved_steps = list(self.steps)
+        self.saved_steps = copy.deepcopy(self.steps)
+        if self.loaded == self.selected:
+            self.app.pending_actions = (
+                copy.deepcopy(self.steps) if len(self.steps) > 1 else []
+            )
         self._render()
         self.app.status_var.set("Steps saved: %s" % self.selected)
 
@@ -2488,6 +2515,8 @@ class ProfileDialog:
             return
         action = self._current_action()
         if action is None:
+            return
+        if not self._confirm_replacing(name):
             return
         self.profiles = profiles.with_steps(self.profiles, name, [action])
         save_profiles(self.profiles)
@@ -2503,17 +2532,21 @@ class ProfileDialog:
         action = self._current_action()
         if action is None:
             return
+        staged = name == self.selected and self.unsaved_changes()
         if name == self.selected:
-            steps = list(self.steps)
+            steps = copy.deepcopy(self.steps)
         else:
-            steps = list(self.profiles.get(name, {}).get("actions", []))
+            steps = copy.deepcopy(self.profiles.get(name, {}).get("actions", []))
         steps.append(action)
         self.profiles = profiles.with_steps(self.profiles, name, steps)
         save_profiles(self.profiles)
         self.names.set(tuple(sorted(self.profiles)))
         self.select_profile(name)
         self.select_step(len(steps) - 1)
-        self.app.status_var.set("Action added to %s" % name)
+        self.app.status_var.set(
+            "Action added to %s%s"
+            % (name, " - staged step changes were saved too" if staged else "")
+        )
 
     def delete_profile(self):
         name = self.selected_name()
@@ -2544,6 +2577,7 @@ class ProfileDialog:
             return
         self.app._apply_action(actions[0])
         self.app.pending_actions = actions if len(actions) > 1 else []
+        self.loaded = name
         self.app.status_var.set("Profile loaded: %s" % name)
         if run:
             self.win.destroy()
