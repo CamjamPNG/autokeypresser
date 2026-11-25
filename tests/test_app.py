@@ -16,6 +16,7 @@ from autoclicker.app import (
     InvalidSettings,
     build_hotkey,
     checked_delay,
+    checked_step_delay,
     checked_text,
     describe_step,
     input_type_for,
@@ -185,6 +186,45 @@ class ProfileStepHelperTests(unittest.TestCase):
 
         self.assertEqual(steps[0]["key"], "a")
 
+    def test_an_action_without_a_delay_has_no_delay_seconds(self):
+        step = {"input_type": "keyboard", "key": "a"}
+
+        self.assertIsNone(profiles_module.step_delay_seconds(step))
+        self.assertIsNone(profiles_module.step_delay_seconds({"delay_ms": None}))
+        self.assertIsNone(profiles_module.step_delay_seconds({"delay_ms": ""}))
+
+    def test_a_step_delay_reads_as_seconds(self):
+        self.assertEqual(profiles_module.step_delay_seconds({"delay_ms": 2000}), 2.0)
+        self.assertEqual(profiles_module.step_delay_seconds({"delay_ms": 250}), 0.25)
+        self.assertEqual(profiles_module.step_delay_seconds({"delay_ms": 0}), 0.0)
+
+    def test_an_unreadable_delay_falls_back_to_the_global_interval(self):
+        for raw in ("soon", -5, "nan", [2000], float("inf"), "1e400", float("-inf")):
+            self.assertIsNone(profiles_module.step_delay_seconds({"delay_ms": raw}))
+
+    def test_with_step_delay_copies_instead_of_mutating_the_caller(self):
+        steps = [{"input_type": "keyboard", "key": "a"}]
+
+        updated = profiles_module.with_step_delay(steps, 0, 2000)
+
+        self.assertEqual(updated[0]["delay_ms"], 2000)
+        self.assertEqual(steps[0], {"input_type": "keyboard", "key": "a"})
+
+    def test_with_step_delay_clears_the_field_for_None(self):
+        steps = [{"input_type": "keyboard", "key": "a", "delay_ms": 2000}]
+
+        self.assertEqual(profiles_module.with_step_delay(steps, 0, None), [{"input_type": "keyboard", "key": "a"}])
+        self.assertEqual(steps[0]["delay_ms"], 2000)
+
+    def test_sequence_needs_the_queue_for_several_steps_or_a_step_delay(self):
+        plain = [{"input_type": "keyboard", "key": "a"}]
+        delayed = [{"input_type": "keyboard", "key": "a", "delay_ms": 2000}]
+
+        self.assertEqual(profiles_module.sequence_actions([]), [])
+        self.assertEqual(profiles_module.sequence_actions(plain), [])
+        self.assertEqual(profiles_module.sequence_actions(delayed), delayed)
+        self.assertEqual(profiles_module.sequence_actions(plain * 2), plain * 2)
+
 
 class ProfileStepPersistenceTests(unittest.TestCase):
     """What the step editor writes to disk, checked against the file itself."""
@@ -279,6 +319,28 @@ class StepLabelTests(unittest.TestCase):
         self.assertTrue(label.startswith("1. Type xxx"))
         self.assertTrue(label.endswith("..."))
 
+    def test_a_step_with_its_own_delay_says_so(self):
+        action = settings_to_action(
+            PressSettings(
+                input_type="mouse",
+                mouse_button="left",
+                use_fixed_position=True,
+                fixed_x=640,
+                fixed_y=480,
+            )
+        )
+        action["delay_ms"] = 2000
+
+        self.assertEqual(
+            describe_step(1, action),
+            "2. Mouse Left single click, at (640, 480) · then waits 2000 ms",
+        )
+
+    def test_a_step_without_a_delay_names_no_pause(self):
+        action = settings_to_action(PressSettings(input_type="keyboard", key="c"))
+
+        self.assertEqual(describe_step(0, action), "1. Key C")
+
 
 class ProfileTextRoundTripTests(unittest.TestCase):
     def setUp(self):
@@ -326,6 +388,35 @@ class ProfileTextRoundTripTests(unittest.TestCase):
 
         self.assertEqual(restored, legacy)
         self.assertEqual(restored.get("text", ""), "")
+
+    def test_a_step_delay_round_trips_and_stays_out_of_plain_steps(self):
+        plain = settings_to_action(PressSettings(input_type="keyboard", key="a"))
+        delayed = settings_to_action(PressSettings(input_type="text", text="hello"))
+        steps = profiles_module.with_step_delay([plain, delayed], 1, 2000)
+        profiles_module.save_profiles({"Greeting": {"actions": steps}})
+
+        restored = profiles_module.load_profiles()["Greeting"]["actions"]
+
+        self.assertEqual(restored[0], plain)
+        self.assertNotIn("delay_ms", restored[0])
+        self.assertEqual(restored[1]["delay_ms"], 2000)
+        self.assertEqual(
+            profiles_module.step_delay_seconds(restored[1]),
+            2.0,
+        )
+        self.assertIsNone(profiles_module.step_delay_seconds(restored[0]))
+
+    def test_a_hand_written_infinite_delay_still_loads_and_falls_back(self):
+        (self.directory / "profiles.json").write_text(
+            '{"Odd": {"actions": [{"input_type": "keyboard", "key": "a",'
+            ' "delay_ms": 1e400}]}}',
+            encoding="utf-8",
+        )
+
+        restored = profiles_module.load_profiles()["Odd"]["actions"][0]
+
+        self.assertEqual(restored["delay_ms"], float("inf"))
+        self.assertIsNone(profiles_module.step_delay_seconds(restored))
 
 
 class ConfigTextTests(unittest.TestCase):
@@ -387,6 +478,35 @@ class DelayValidationTests(unittest.TestCase):
             self.assertEqual(
                 str(raised.exception),
                 "Start delay must be a whole number from 0 to 30.",
+            )
+
+
+class StepDelayValidationTests(unittest.TestCase):
+    def test_a_blank_field_keeps_the_global_interval(self):
+        self.assertIsNone(checked_step_delay(""))
+        self.assertIsNone(checked_step_delay("   "))
+
+    def test_accepts_the_whole_range(self):
+        self.assertEqual(checked_step_delay("0"), 0)
+        self.assertEqual(checked_step_delay(" 2000 "), 2000)
+        self.assertEqual(checked_step_delay("60000"), 60000)
+
+    def test_non_numeric_has_its_own_message(self):
+        for raw in ("soon", "2.5", "ms 20"):
+            with self.assertRaises(InvalidSettings) as raised:
+                checked_step_delay(raw)
+            self.assertEqual(
+                str(raised.exception),
+                "Step delay must be a whole number of milliseconds from 0 to 60000.",
+            )
+
+    def test_range_has_its_own_message(self):
+        for raw in ("-1", "60001", "-2000"):
+            with self.assertRaises(InvalidSettings) as raised:
+                checked_step_delay(raw)
+            self.assertEqual(
+                str(raised.exception),
+                "Step delay must be between 0 and 60000 milliseconds.",
             )
 
 
@@ -899,10 +1019,198 @@ class ProfileStepDialogTests(unittest.TestCase):
         self.assertFalse(self.dialog.unsaved_changes())
 
 
+class ProfileStepDelayDialogTests(unittest.TestCase):
+    """The step editor's delay field: it stages like every other edit."""
+
+    def setUp(self):
+        try:
+            self.root = tk.Tk()
+        except tk.TclError as exc:
+            self.skipTest("Tk display unavailable: %s" % exc)
+        self.addCleanup(self.root.destroy)
+        self.directory = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.directory, ignore_errors=True)
+        patcher = mock.patch.multiple(
+            profiles_module,
+            PROFILE_DIR=self.directory,
+            PROFILE_FILE=self.directory / "profiles.json",
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        profiles_module.save_profiles(
+            {
+                "Sequence": {
+                    "actions": [self.step("a"), self.step("b"), self.step("c")]
+                },
+                "Solo": {"actions": [self.step("d")]},
+            }
+        )
+        with mock.patch.object(app_module.AutoClickerApp, "_start_hotkey_listener"), \
+             mock.patch.object(app_module.AutoClickerApp, "_check_for_updates"):
+            self.app = app_module.AutoClickerApp(self.root)
+        self.dialog = app_module.ProfileDialog(self.app)
+        self.addCleanup(self._close_dialog)
+
+    def _close_dialog(self):
+        try:
+            self.dialog.win.destroy()
+        except tk.TclError:
+            pass
+
+    def step(self, key):
+        return settings_to_action(PressSettings(input_type="keyboard", key=key))
+
+    def stored_delays(self, name="Sequence"):
+        return [step.get("delay_ms") for step in profiles_module.load_profiles()[name]["actions"]]
+
+    def reseed(self, saved):
+        """Replace what is on disk and let the dialog's library follow it."""
+        profiles_module.save_profiles(saved)
+        self.dialog.profiles = profiles_module.load_profiles()
+        self.dialog.names.set(tuple(sorted(self.dialog.profiles)))
+
+    def test_a_new_delay_is_staged_and_only_Save_steps_writes_it(self):
+        self.dialog.select_profile("Sequence")
+        self.dialog.select_step(1)
+        self.dialog.delay_var.set("2000")
+
+        self.dialog.apply_delay()
+
+        self.assertEqual(self.dialog.steps[1]["delay_ms"], 2000)
+        self.assertTrue(self.dialog.unsaved_changes())
+        self.assertIn("Unsaved changes", self.dialog.state_var.get())
+        self.assertEqual(self.dialog.step_list.get(1), "2. Key B · then waits 2000 ms")
+        self.assertEqual(self.stored_delays(), [None, None, None])
+
+        self.dialog.save_steps()
+
+        self.assertFalse(self.dialog.unsaved_changes())
+        self.assertEqual(self.stored_delays(), [None, 2000, None])
+        self.assertIn("on disk: 3 steps", self.dialog.state_var.get())
+
+    def test_staging_a_delay_leaves_the_snapshot_and_the_disk_alone(self):
+        self.dialog.select_profile("Sequence")
+        self.dialog.select_step(0)
+        self.dialog.delay_var.set("500")
+
+        self.dialog.apply_delay()
+
+        self.assertTrue(self.dialog.unsaved_changes())
+        self.assertNotIn("delay_ms", self.dialog.profiles["Sequence"]["actions"][0])
+        self.assertNotIn("delay_ms", self.dialog.saved_steps[0])
+        raw = json.loads((self.directory / "profiles.json").read_text(encoding="utf-8"))
+        self.assertEqual([step.get("delay_ms") for step in raw["Sequence"]["actions"]], [None, None, None])
+
+    def test_the_entry_shows_the_delay_of_the_selected_step(self):
+        self.reseed(
+            {"Sequence": {"actions": [dict(self.step("a"), delay_ms=750), self.step("b")]}}
+        )
+        self.dialog.select_profile("Sequence")
+
+        self.dialog.select_step(0)
+        self.assertEqual(self.dialog.delay_var.get(), "750")
+        self.dialog.select_step(1)
+        self.assertEqual(self.dialog.delay_var.get(), "")
+
+    def test_a_blank_field_clears_the_delay(self):
+        self.reseed(
+            {"Sequence": {"actions": [dict(self.step("a"), delay_ms=750), self.step("b")]}}
+        )
+        self.dialog.select_profile("Sequence")
+        self.dialog.select_step(0)
+
+        self.dialog.delay_var.set("")
+        self.dialog.apply_delay()
+        self.dialog.save_steps()
+
+        self.assertNotIn("delay_ms", profiles_module.load_profiles()["Sequence"]["actions"][0])
+        self.assertEqual(self.dialog.step_list.get(0), "1. Key A")
+
+    def test_an_invalid_delay_keeps_its_own_message(self):
+        self.dialog.select_profile("Sequence")
+        self.dialog.select_step(0)
+
+        with mock.patch.object(app_module, "messagebox") as box:
+            self.dialog.delay_var.set("soon")
+            self.dialog.apply_delay()
+            self.dialog.delay_var.set("-1")
+            self.dialog.apply_delay()
+
+        messages = [call.args[1] for call in box.showerror.call_args_list]
+        self.assertEqual(
+            messages,
+            [
+                "Step delay must be a whole number of milliseconds from 0 to 60000.",
+                "Step delay must be between 0 and 60000 milliseconds.",
+            ],
+        )
+        self.assertFalse(self.dialog.unsaved_changes())
+        self.assertEqual(self.stored_delays(), [None, None, None])
+
+    def test_applying_a_delay_with_no_step_selected_says_so(self):
+        self.dialog.select_profile("Sequence")
+        self.dialog.delay_var.set("2000")
+
+        with mock.patch.object(app_module, "messagebox") as box:
+            self.dialog.apply_delay()
+
+        self.assertEqual(
+            box.showwarning.call_args.args[1], "Select the step to give a delay first."
+        )
+        box.showerror.assert_not_called()
+        self.assertFalse(self.dialog.unsaved_changes())
+
+    def test_saving_a_loaded_profile_requeues_the_delays(self):
+        self.dialog.select_profile("Sequence")
+        self.dialog.load_profile()
+        self.dialog.select_step(0)
+        self.dialog.delay_var.set("2000")
+        self.dialog.apply_delay()
+
+        self.dialog.save_steps()
+
+        self.assertEqual(
+            [step.get("delay_ms") for step in self.app.pending_actions],
+            [2000, None, None],
+        )
+        self.assertEqual(self.stored_delays(), [2000, None, None])
+
+    def test_saving_after_a_start_does_not_requeue_a_delayed_sequence(self):
+        self.dialog.select_profile("Sequence")
+        self.dialog.load_profile()
+        self.dialog.select_step(0)
+        self.dialog.delay_var.set("2000")
+        self.dialog.apply_delay()
+        with mock.patch.object(app_module, "PressEngine"):
+            self.app._start()
+
+        self.dialog.save_steps()
+
+        self.assertEqual(self.app.pending_actions, [])
+        self.assertEqual(self.stored_delays(), [2000, None, None])
+
+    def test_loading_a_single_delayed_step_keeps_it_in_the_queue(self):
+        self.reseed({"Solo": {"actions": [dict(self.step("d"), delay_ms=1500)]}})
+        self.dialog.select_profile("Solo")
+
+        self.dialog.load_profile()
+
+        self.assertEqual(
+            [step.get("delay_ms") for step in self.app.pending_actions], [1500]
+        )
+
+    def test_loading_a_single_plain_step_leaves_the_queue_empty(self):
+        self.dialog.select_profile("Solo")
+
+        self.dialog.load_profile()
+
+        self.assertEqual(self.app.pending_actions, [])
+
+
 class VersionTests(unittest.TestCase):
     def test_app_reports_the_version_the_updater_checks(self):
-        self.assertEqual(updater.CURRENT_VERSION, "2.0.3")
-        self.assertEqual(APP_NAME, "AutoKeyPresser 2.0.3")
+        self.assertEqual(updater.CURRENT_VERSION, "2.0.4")
+        self.assertEqual(APP_NAME, "AutoKeyPresser 2.0.4")
 
 
 class UpdaterTests(unittest.TestCase):

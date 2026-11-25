@@ -28,6 +28,8 @@ mouse button from a modern, focused desktop workspace.
    [hours/mins/secs/milliseconds];
  * Optional start delay of up to 30 seconds before the first action, with a
    visible countdown you can cancel with Stop or F12;
+ * A pause of your own on any sequence step, up to 60 seconds, so a step can wait
+   longer than the global interval before the next one runs;
  * Choose mouse button [Left/Right/Middle];
  * Choose press type [Single/Double];
  * Repeat until stopped or repeat a given amount of times;

@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 
 import pyautogui
 
+from .profiles import step_delay_seconds
+
 
 @dataclass
 class PressSettings:
@@ -71,14 +73,19 @@ class PressEngine:
             cycles = 0
             actions = self.settings.actions or [self.settings]
             while not self._stop_event.is_set():
-                for action in actions:
+                last_cycle = limit is not None and cycles + 1 >= limit
+                for position, action in enumerate(actions):
                     if self._stop_event.is_set():
                         break
                     self._press_action(action)
                     self.count += 1
                     done += 1
                     self.on_status(("status", self.count))
-                    if self._stop_event.wait(self._next_interval(interval)):
+                    if last_cycle and position == len(actions) - 1:
+                        # Nothing follows the final press, so waiting here would
+                        # hold the run at "Running" for a pause that never ends.
+                        break
+                    if self._stop_event.wait(self._next_interval(interval, action)):
                         break
                 cycles += 1
                 if limit is not None and cycles >= limit:
@@ -157,7 +164,15 @@ class PressEngine:
                 else:
                     pyautogui.press(key)
 
-    def _next_interval(self, default):
+    def _next_interval(self, default, action=None):
+        """The pause after action: its own delay, else the global interval.
+
+        A step's delay belongs to that step, so it also overrides a randomized
+        global interval - a fixed pause is the whole reason to set one.
+        """
+        own = step_delay_seconds(action)
+        if own is not None:
+            return max(own, 0.001)
         if not self.settings.randomize_interval:
             return default
         low = max(self.settings.random_min_seconds, 0.001)

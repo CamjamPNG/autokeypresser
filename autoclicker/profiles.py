@@ -1,9 +1,12 @@
 import copy
 import json
+import math
 from pathlib import Path
 
 PROFILE_DIR = Path.home() / ".autokeypresser"
 PROFILE_FILE = PROFILE_DIR / "profiles.json"
+
+DELAY_FIELD = "delay_ms"
 
 
 def load_profiles():
@@ -53,6 +56,59 @@ def replace_step(actions, index, action):
         return steps
     steps[index] = action
     return steps
+
+
+def step_delay_seconds(action):
+    """Return the step's own delay in seconds, or None for the global interval.
+
+    An action without the field, or with a value this build cannot read, falls
+    back to the global interval instead of failing, so a file written by hand or
+    by a newer build still runs.
+    """
+    raw = (
+        action.get(DELAY_FIELD)
+        if isinstance(action, dict)
+        else getattr(action, DELAY_FIELD, None)
+    )
+    if raw is None or raw == "":
+        return None
+    try:
+        milliseconds = float(raw)
+    except (TypeError, ValueError):
+        return None
+    # inf would reach threading.Event.wait and raise OverflowError mid-run, so a
+    # value that is not a finite number is as unreadable as "soon".
+    if not math.isfinite(milliseconds) or milliseconds < 0:
+        return None
+    return milliseconds / 1000.0
+
+
+def with_step_delay(actions, index, milliseconds):
+    """Return a copy of actions with one step's own delay set, or cleared when None.
+
+    The copy keeps the working list apart from the stored snapshot, so staging a
+    delay never changes what unsaved_changes() compares against.
+    """
+    steps = copy.deepcopy(list(actions))
+    if not 0 <= index < len(steps):
+        return steps
+    if milliseconds is None:
+        steps[index].pop(DELAY_FIELD, None)
+    else:
+        steps[index][DELAY_FIELD] = int(milliseconds)
+    return steps
+
+
+def sequence_actions(actions):
+    """The queued steps a run needs, or an empty list for one plain step.
+
+    A single step that carries its own delay stays in the queue, because the
+    delay lives on the step and the action card has no field of its own.
+    """
+    steps = list(actions)
+    if len(steps) > 1 or (steps and step_delay_seconds(steps[0]) is not None):
+        return copy.deepcopy(steps)
+    return []
 
 
 def with_steps(profiles, name, actions):

@@ -283,5 +283,142 @@ class StartDelayTests(unittest.TestCase):
         self.assertFalse(any(msg == "countdown" for msg, _ in statuses))
 
 
+class PerStepDelayTests(unittest.TestCase):
+    """A step that carries delay_ms waits its own value instead of the interval."""
+
+    def engine(self, **overrides):
+        return PressEngine(make_engine(**overrides), on_status=lambda _m: None)
+
+    def test_a_step_without_a_delay_keeps_the_global_interval(self):
+        engine = self.engine(interval_seconds=0.25)
+
+        self.assertEqual(engine._next_interval(0.25), 0.25)
+        self.assertEqual(engine._next_interval(0.25, {"input_type": "keyboard"}), 0.25)
+
+    def test_a_step_with_a_delay_waits_its_own_value(self):
+        engine = self.engine(interval_seconds=0.25)
+
+        self.assertAlmostEqual(engine._next_interval(0.25, {"delay_ms": 2000}), 2.0)
+        self.assertAlmostEqual(engine._next_interval(0.25, {"delay_ms": 0}), 0.001)
+
+    def test_an_infinite_delay_falls_back_instead_of_raising(self):
+        engine = self.engine(interval_seconds=0.25)
+
+        self.assertEqual(engine._next_interval(0.25, {"delay_ms": float("inf")}), 0.25)
+        self.assertEqual(engine._next_interval(0.25, {"delay_ms": "1e400"}), 0.25)
+        self.assertEqual(engine._next_interval(0.25, {"delay_ms": float("nan")}), 0.25)
+
+    def test_a_step_delay_wins_over_a_randomized_interval(self):
+        engine = self.engine(
+            interval_seconds=0.25,
+            randomize_interval=True,
+            random_min_seconds=0.5,
+            random_max_seconds=0.9,
+        )
+
+        self.assertAlmostEqual(engine._next_interval(0.25, {"delay_ms": 40}), 0.04)
+        self.assertTrue(0.5 <= engine._next_interval(0.25, {}) <= 0.9)
+
+    def test_the_run_waits_the_per_step_delay_between_presses(self):
+        settings = make_engine(
+            input_type="keyboard",
+            key="a",
+            interval_seconds=0,
+            repeat_until_stopped=False,
+            repeat_count=1,
+        )
+        settings.actions = [
+            {"input_type": "keyboard", "key": "a", "delay_ms": 200},
+            {"input_type": "keyboard", "key": "b"},
+        ]
+        pressed = []
+
+        def record(key):
+            pressed.append((key, time.monotonic()))
+
+        with mock.patch("autoclicker.engine.pyautogui.press", side_effect=record):
+            engine = PressEngine(settings, on_status=lambda _m: None)
+            engine.start()
+            engine._thread.join(timeout=3)
+
+        self.assertEqual([key for key, _ in pressed], ["a", "b"])
+        gap = pressed[1][1] - pressed[0][1]
+        self.assertGreaterEqual(gap, 0.18)
+        self.assertLess(gap, 0.5)
+
+    def test_the_run_uses_the_global_interval_for_a_step_without_a_delay(self):
+        settings = make_engine(
+            input_type="keyboard",
+            key="a",
+            interval_seconds=0.1,
+            repeat_until_stopped=False,
+            repeat_count=2,
+        )
+        settings.actions = [{"input_type": "keyboard", "key": "a"}]
+        pressed = []
+
+        def record(key):
+            pressed.append((key, time.monotonic()))
+
+        with mock.patch("autoclicker.engine.pyautogui.press", side_effect=record):
+            engine = PressEngine(settings, on_status=lambda _m: None)
+            engine.start()
+            engine._thread.join(timeout=3)
+
+        self.assertEqual(len(pressed), 2)
+        gap = pressed[1][1] - pressed[0][1]
+        self.assertGreaterEqual(gap, 0.08)
+        self.assertLess(gap, 0.35)
+
+    def test_a_run_does_not_wait_after_its_final_press(self):
+        settings = make_engine(
+            input_type="keyboard",
+            key="a",
+            interval_seconds=0,
+            repeat_until_stopped=False,
+            repeat_count=1,
+        )
+        settings.actions = [{"input_type": "keyboard", "key": "a", "delay_ms": 500}]
+        started = time.monotonic()
+
+        with mock.patch("autoclicker.engine.pyautogui.press"):
+            engine = PressEngine(settings, on_status=lambda _m: None)
+            engine.start()
+            engine._thread.join(timeout=3)
+
+        self.assertEqual(engine.count, 1)
+        self.assertLess(time.monotonic() - started, 0.3)
+
+    def test_a_delay_still_paces_a_step_that_is_not_last(self):
+        settings = make_engine(
+            input_type="keyboard",
+            key="a",
+            interval_seconds=0,
+            repeat_until_stopped=False,
+            repeat_count=2,
+        )
+        settings.actions = [
+            {"input_type": "keyboard", "key": "a", "delay_ms": 120},
+            {"input_type": "keyboard", "key": "b"},
+        ]
+        pressed = []
+
+        def record(key):
+            pressed.append((key, time.monotonic()))
+
+        with mock.patch("autoclicker.engine.pyautogui.press", side_effect=record):
+            engine = PressEngine(settings, on_status=lambda _m: None)
+            engine.start()
+            engine._thread.join(timeout=3)
+
+        self.assertEqual([key for key, _ in pressed], ["a", "b", "a", "b"])
+        first_gap = pressed[1][1] - pressed[0][1]
+        second_gap = pressed[3][1] - pressed[2][1]
+        self.assertGreaterEqual(first_gap, 0.10)
+        self.assertLess(first_gap, 0.35)
+        self.assertGreaterEqual(second_gap, 0.10)
+        self.assertLess(second_gap, 0.35)
+
+
 if __name__ == "__main__":
     unittest.main()
