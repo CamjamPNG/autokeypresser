@@ -35,7 +35,7 @@ published GitHub release notes and the repository history.
   being recorded as a macro. Steps without the field keep the global interval exactly
   as before, and the key is simply absent from old profiles, so no conversion step is
   needed and older builds ignore it. The list names the pause, as in
-  `2. Key B · after 2000 ms`.
+  `2. Key B · then waits 2000 ms`.
 
 ## [2.0] - 2026-09-16
 

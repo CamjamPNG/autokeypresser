@@ -199,7 +199,7 @@ class ProfileStepHelperTests(unittest.TestCase):
         self.assertEqual(profiles_module.step_delay_seconds({"delay_ms": 0}), 0.0)
 
     def test_an_unreadable_delay_falls_back_to_the_global_interval(self):
-        for raw in ("soon", -5, "nan", [2000]):
+        for raw in ("soon", -5, "nan", [2000], float("inf"), "1e400", float("-inf")):
             self.assertIsNone(profiles_module.step_delay_seconds({"delay_ms": raw}))
 
     def test_with_step_delay_copies_instead_of_mutating_the_caller(self):
@@ -333,7 +333,7 @@ class StepLabelTests(unittest.TestCase):
 
         self.assertEqual(
             describe_step(1, action),
-            "2. Mouse Left single click, at (640, 480) · after 2000 ms",
+            "2. Mouse Left single click, at (640, 480) · then waits 2000 ms",
         )
 
     def test_a_step_without_a_delay_names_no_pause(self):
@@ -405,6 +405,18 @@ class ProfileTextRoundTripTests(unittest.TestCase):
             2.0,
         )
         self.assertIsNone(profiles_module.step_delay_seconds(restored[0]))
+
+    def test_a_hand_written_infinite_delay_still_loads_and_falls_back(self):
+        (self.directory / "profiles.json").write_text(
+            '{"Odd": {"actions": [{"input_type": "keyboard", "key": "a",'
+            ' "delay_ms": 1e400}]}}',
+            encoding="utf-8",
+        )
+
+        restored = profiles_module.load_profiles()["Odd"]["actions"][0]
+
+        self.assertEqual(restored["delay_ms"], float("inf"))
+        self.assertIsNone(profiles_module.step_delay_seconds(restored))
 
 
 class ConfigTextTests(unittest.TestCase):
@@ -1067,7 +1079,7 @@ class ProfileStepDelayDialogTests(unittest.TestCase):
         self.assertEqual(self.dialog.steps[1]["delay_ms"], 2000)
         self.assertTrue(self.dialog.unsaved_changes())
         self.assertIn("Unsaved changes", self.dialog.state_var.get())
-        self.assertEqual(self.dialog.step_list.get(1), "2. Key B · after 2000 ms")
+        self.assertEqual(self.dialog.step_list.get(1), "2. Key B · then waits 2000 ms")
         self.assertEqual(self.stored_delays(), [None, None, None])
 
         self.dialog.save_steps()

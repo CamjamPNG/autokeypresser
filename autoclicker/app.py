@@ -137,7 +137,7 @@ def describe_step(index, action):
         label += " · hold %d ms" % held
     delay = profiles.step_delay_seconds(action)
     if delay is not None:
-        label += " · after %d ms" % round(delay * 1000)
+        label += " · then waits %d ms" % round(delay * 1000)
     return "%d. %s" % (index + 1, label)
 
 
@@ -2267,21 +2267,45 @@ class ProfileDialog:
         self.listing.grid(row=1, column=0, sticky="nsew")
         self.listing.bind("<<ListboxSelect>>", self._on_profile_select)
 
-        editor = ttk.Frame(body, style="Card.TFrame", padding=18)
+        editor = ttk.Frame(body, style="Card.TFrame", padding=14)
         editor.grid(row=2, column=1, sticky="nsew", padx=(9, 0))
         editor.grid_columnconfigure(0, weight=1)
-        editor.grid_rowconfigure(4, weight=1)
-        ttk.Label(editor, text="PROFILE STEPS", style="FieldLabel.TLabel").grid(
+        editor.grid_rowconfigure(3, weight=1)
+        header = ttk.Frame(editor, style="Card.TFrame")
+        header.grid(row=0, column=0, sticky="ew")
+        header.grid_columnconfigure(1, weight=1)
+        ttk.Label(header, text="PROFILE STEPS", style="FieldLabel.TLabel").grid(
             row=0, column=0, sticky="w"
         )
-        ttk.Label(editor, text="Name", style="CardLabel.TLabel").grid(
-            row=1, column=0, sticky="w", pady=(10, 4)
+        ttk.Label(header, text="Pause after (ms)", style="CardLabel.TLabel").grid(
+            row=0, column=1, sticky="e", padx=(8, 6)
+        )
+        self.delay_var = tk.StringVar()
+        delay_entry = ttk.Entry(header, textvariable=self.delay_var, width=7)
+        delay_entry.grid(row=0, column=2, sticky="e")
+        delay_entry.bind("<Return>", lambda _event: self.apply_delay())
+        ttk.Label(header, text="blank = global", style="CardMuted.TLabel").grid(
+            row=0, column=3, sticky="e", padx=(6, 6)
+        )
+        ttk.Button(
+            header,
+            text="Apply",
+            style="Secondary.TButton",
+            command=self.apply_delay,
+        ).grid(row=0, column=4, sticky="e")
+        name_row = ttk.Frame(editor, style="Card.TFrame")
+        name_row.grid(row=1, column=0, sticky="ew", pady=(8, 4))
+        name_row.grid_columnconfigure(1, weight=1)
+        ttk.Label(name_row, text="Name", style="CardLabel.TLabel").grid(
+            row=0, column=0, sticky="w"
         )
         self.name_var = tk.StringVar()
-        ttk.Entry(editor, textvariable=self.name_var).grid(row=2, column=0, sticky="ew")
+        ttk.Entry(name_row, textvariable=self.name_var).grid(
+            row=0, column=1, sticky="ew", padx=(8, 0)
+        )
         self.state_var = tk.StringVar()
         ttk.Label(editor, textvariable=self.state_var, style="CardMuted.TLabel").grid(
-            row=3, column=0, sticky="w", pady=(8, 4)
+            row=2, column=0, sticky="w", pady=(6, 2)
         )
         self.step_list = tk.Listbox(
             editor,
@@ -2299,7 +2323,7 @@ class ProfileDialog:
             selectforeground=colors["accent_text"],
             font=(app.body_font, 10),
         )
-        self.step_list.grid(row=4, column=0, sticky="nsew")
+        self.step_list.grid(row=3, column=0, sticky="nsew")
         self.step_list.bind("<<ListboxSelect>>", self._on_step_select)
 
         self.preview_var = tk.StringVar()
@@ -2309,32 +2333,10 @@ class ProfileDialog:
             style="Summary.TLabel",
             wraplength=360,
             justify="left",
-        ).grid(row=5, column=0, sticky="ew", pady=(8, 0))
-
-        delay_row = ttk.Frame(editor, style="Panel.TFrame")
-        delay_row.grid(row=6, column=0, sticky="ew", pady=(10, 0))
-        delay_row.grid_columnconfigure(1, weight=1)
-        ttk.Label(delay_row, text="Step delay (ms)", style="CardLabel.TLabel").grid(
-            row=0, column=0, sticky="w"
-        )
-        self.delay_var = tk.StringVar()
-        delay_entry = ttk.Entry(delay_row, textvariable=self.delay_var, width=10)
-        delay_entry.grid(row=0, column=1, sticky="ew", padx=(8, 6))
-        delay_entry.bind("<Return>", lambda _event: self.apply_delay())
-        ttk.Button(
-            delay_row,
-            text="Apply to step",
-            style="Secondary.TButton",
-            command=self.apply_delay,
-        ).grid(row=0, column=2, sticky="ew")
-        ttk.Label(
-            delay_row,
-            text="Blank keeps the global interval; 0 fires as soon as it can.",
-            style="CardMuted.TLabel",
-        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 0))
+        ).grid(row=4, column=0, sticky="ew", pady=(8, 0))
 
         reorder = ttk.Frame(editor, style="Panel.TFrame")
-        reorder.grid(row=7, column=0, sticky="ew", pady=(10, 0))
+        reorder.grid(row=5, column=0, sticky="ew", pady=(8, 0))
         for column in range(3):
             reorder.grid_columnconfigure(column, weight=1)
         ttk.Button(
@@ -2360,7 +2362,7 @@ class ProfileDialog:
         ).grid(row=1, column=2, sticky="ew", pady=(8, 0))
 
         primary_actions = ttk.Frame(editor, style="Panel.TFrame")
-        primary_actions.grid(row=8, column=0, sticky="ew", pady=(10, 0))
+        primary_actions.grid(row=6, column=0, sticky="ew", pady=(8, 0))
         ttk.Button(
             primary_actions,
             text="Save current",

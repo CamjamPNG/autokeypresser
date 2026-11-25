@@ -1,5 +1,6 @@
 import copy
 import json
+import math
 from pathlib import Path
 
 PROFILE_DIR = Path.home() / ".autokeypresser"
@@ -75,7 +76,9 @@ def step_delay_seconds(action):
         milliseconds = float(raw)
     except (TypeError, ValueError):
         return None
-    if not milliseconds >= 0:
+    # inf would reach threading.Event.wait and raise OverflowError mid-run, so a
+    # value that is not a finite number is as unreadable as "soon".
+    if not math.isfinite(milliseconds) or milliseconds < 0:
         return None
     return milliseconds / 1000.0
 

@@ -73,13 +73,18 @@ class PressEngine:
             cycles = 0
             actions = self.settings.actions or [self.settings]
             while not self._stop_event.is_set():
-                for action in actions:
+                last_cycle = limit is not None and cycles + 1 >= limit
+                for position, action in enumerate(actions):
                     if self._stop_event.is_set():
                         break
                     self._press_action(action)
                     self.count += 1
                     done += 1
                     self.on_status(("status", self.count))
+                    if last_cycle and position == len(actions) - 1:
+                        # Nothing follows the final press, so waiting here would
+                        # hold the run at "Running" for a pause that never ends.
+                        break
                     if self._stop_event.wait(self._next_interval(interval, action)):
                         break
                 cycles += 1
