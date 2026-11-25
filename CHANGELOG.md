@@ -29,6 +29,13 @@ published GitHub release notes and the repository history.
   stored steps with the action card, so a sequence is not shrunk by one click. Profiles
   keep their existing `"actions"` list on disk, so saved profiles load in older builds
   unchanged.
+- A delay of its own for any profile step, set in the step editor's Step delay field.
+  A step that carries `"delay_ms"` waits that long before the next step instead of the
+  global interval, so a sequence can click, pause two seconds, and then type without
+  being recorded as a macro. Steps without the field keep the global interval exactly
+  as before, and the key is simply absent from old profiles, so no conversion step is
+  needed and older builds ignore it. The list names the pause, as in
+  `2. Key B · after 2000 ms`.
 
 ## [2.0] - 2026-09-16
 

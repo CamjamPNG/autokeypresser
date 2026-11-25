@@ -13,7 +13,7 @@ from . import macro, profiles, themes
 from .profiles import load_profiles, save_profiles
 from . import updater
 
-APP_NAME = "AutoKeyPresser 2.0.3"
+APP_NAME = "AutoKeyPresser 2.0.4"
 
 # The action card labels map one-to-one onto the engine's input_type values.
 INPUT_TYPES = {"Mouse": "mouse", "Keyboard": "keyboard", "Text": "text"}
@@ -37,6 +37,9 @@ ACTION_FIELDS = (
 
 class InvalidSettings(ValueError):
     """The action card holds something the engine cannot send."""
+
+
+STEP_DELAY_MAX_MS = 60000
 
 
 def input_type_for(mode):
@@ -76,6 +79,25 @@ def checked_delay(raw):
     return seconds
 
 
+def checked_step_delay(raw):
+    """Return a step's own delay in milliseconds, or None to keep the global interval."""
+    text = str(raw).strip()
+    if not text:
+        return None
+    try:
+        milliseconds = int(text)
+    except (TypeError, ValueError):
+        raise InvalidSettings(
+            "Step delay must be a whole number of milliseconds from 0 to %d."
+            % STEP_DELAY_MAX_MS
+        )
+    if milliseconds < 0 or milliseconds > STEP_DELAY_MAX_MS:
+        raise InvalidSettings(
+            "Step delay must be between 0 and %d milliseconds." % STEP_DELAY_MAX_MS
+        )
+    return milliseconds
+
+
 def settings_to_action(settings):
     """Freeze a PressSettings into the dict a profile stores."""
     action = {"input_type": settings.input_type}
@@ -113,6 +135,9 @@ def describe_step(index, action):
     if action.get("hold_mode") and kind != "text":
         held = round(float(action.get("hold_duration_seconds", 0.05)) * 1000)
         label += " · hold %d ms" % held
+    delay = profiles.step_delay_seconds(action)
+    if delay is not None:
+        label += " · after %d ms" % round(delay * 1000)
     return "%d. %s" % (index + 1, label)
 
 
@@ -861,7 +886,7 @@ class AutoClickerApp:
         ttk.Label(footer, textvariable=self.status_var, style="Muted.TLabel").grid(
             row=0, column=1, sticky="w"
         )
-        ttk.Label(footer, text="v2.0.3  •  local by design", style="Quiet.TLabel").grid(
+        ttk.Label(footer, text="v2.0.4  •  local by design", style="Quiet.TLabel").grid(
             row=0, column=2, sticky="e"
         )
 
@@ -2286,8 +2311,30 @@ class ProfileDialog:
             justify="left",
         ).grid(row=5, column=0, sticky="ew", pady=(8, 0))
 
+        delay_row = ttk.Frame(editor, style="Panel.TFrame")
+        delay_row.grid(row=6, column=0, sticky="ew", pady=(10, 0))
+        delay_row.grid_columnconfigure(1, weight=1)
+        ttk.Label(delay_row, text="Step delay (ms)", style="CardLabel.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        self.delay_var = tk.StringVar()
+        delay_entry = ttk.Entry(delay_row, textvariable=self.delay_var, width=10)
+        delay_entry.grid(row=0, column=1, sticky="ew", padx=(8, 6))
+        delay_entry.bind("<Return>", lambda _event: self.apply_delay())
+        ttk.Button(
+            delay_row,
+            text="Apply to step",
+            style="Secondary.TButton",
+            command=self.apply_delay,
+        ).grid(row=0, column=2, sticky="ew")
+        ttk.Label(
+            delay_row,
+            text="Blank keeps the global interval; 0 fires as soon as it can.",
+            style="CardMuted.TLabel",
+        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 0))
+
         reorder = ttk.Frame(editor, style="Panel.TFrame")
-        reorder.grid(row=6, column=0, sticky="ew", pady=(10, 0))
+        reorder.grid(row=7, column=0, sticky="ew", pady=(10, 0))
         for column in range(3):
             reorder.grid_columnconfigure(column, weight=1)
         ttk.Button(
@@ -2313,7 +2360,7 @@ class ProfileDialog:
         ).grid(row=1, column=2, sticky="ew", pady=(8, 0))
 
         primary_actions = ttk.Frame(editor, style="Panel.TFrame")
-        primary_actions.grid(row=7, column=0, sticky="ew", pady=(10, 0))
+        primary_actions.grid(row=8, column=0, sticky="ew", pady=(10, 0))
         ttk.Button(
             primary_actions,
             text="Save current",
@@ -2496,6 +2543,20 @@ class ProfileDialog:
         self._render()
         self.select_step(index)
 
+    def apply_delay(self):
+        index = self.selected_index()
+        if index is None:
+            self._say("Select the step to give a delay first.")
+            return
+        try:
+            milliseconds = checked_step_delay(self.delay_var.get())
+        except InvalidSettings as exc:
+            self._say(str(exc), error=True)
+            return
+        self.steps = profiles.with_step_delay(self.steps, index, milliseconds)
+        self._render()
+        self.select_step(index)
+
     def save_steps(self):
         if self.selected is None:
             self._say("Select a saved profile to save its steps.")
@@ -2508,9 +2569,7 @@ class ProfileDialog:
             and self.queued
             and self.app.pending_actions == self.queued
         ):
-            self.app.pending_actions = (
-                copy.deepcopy(self.steps) if len(self.steps) > 1 else []
-            )
+            self.app.pending_actions = profiles.sequence_actions(self.steps)
             self.queued = copy.deepcopy(self.app.pending_actions)
         else:
             self.loaded = None
@@ -2585,7 +2644,7 @@ class ProfileDialog:
         if not self._discard_pending():
             return
         self.app._apply_action(actions[0])
-        self.app.pending_actions = actions if len(actions) > 1 else []
+        self.app.pending_actions = profiles.sequence_actions(actions)
         self.loaded = name
         self.queued = copy.deepcopy(self.app.pending_actions)
         self.app.status_var.set("Profile loaded: %s" % name)
@@ -2624,5 +2683,8 @@ class ProfileDialog:
         index = self.selected_index()
         if index is None:
             self.preview_var.set("Select a step to move, remove, or replace it.")
+            self.delay_var.set("")
         else:
             self.preview_var.set("%s selected." % describe_step(index, self.steps[index]))
+            delay = profiles.step_delay_seconds(self.steps[index])
+            self.delay_var.set("" if delay is None else str(int(round(delay * 1000))))
