@@ -584,5 +584,30 @@ class StopAfterTests(unittest.TestCase):
         self.assertIsNone(engine._deadline())
 
 
+class StopAfterReviewFixTests(unittest.TestCase):
+    """The two guards the PR #7 audit asked for."""
+
+    def test_the_limit_message_uses_the_value_the_deadline_was_taken_from(self):
+        settings = make_engine(
+            repeat_until_stopped=True, interval_seconds=0.02, stop_after_seconds=1
+        )
+        statuses = []
+        with mock.patch("autoclicker.engine.pyautogui.click"):
+            engine = PressEngine(settings, on_status=statuses.append)
+            started = time.monotonic()
+            engine.start()
+            time.sleep(0.2)
+            # The UI collects settings in place, so a field edited mid-run must
+            # not rewrite what the status line says ended it.
+            settings.stop_after_seconds = 0
+            engine._thread.join(timeout=3)
+            elapsed = time.monotonic() - started
+
+        self.assertGreaterEqual(elapsed, 0.95)
+        self.assertLess(elapsed, 2.0)
+        self.assertEqual([value for msg, value in statuses if msg == "limit"], [1])
+        self.assertEqual(statuses[-1], ("done", engine.count))
+
+
 if __name__ == "__main__":
     unittest.main()

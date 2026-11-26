@@ -1580,7 +1580,9 @@ class AutoClickerApp:
         return s
 
     def _current_action(self):
-        return settings_to_action(self._collect_settings())
+        # A profile step never carries the run's duration limit, so it must not
+        # be able to block saving a step while the field holds anything odd.
+        return settings_to_action(self._collect_settings(validate_limit=False))
 
     def _apply_action(self, action):
         self.input_type_var.set(mode_for(action.get("input_type", "mouse")))

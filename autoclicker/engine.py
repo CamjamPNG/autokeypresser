@@ -43,6 +43,7 @@ class PressEngine:
         self._thread = None
         self.count = 0
         self._limit_reached = False
+        self._captured_limit = 0.0
 
     @property
     def running(self):
@@ -100,7 +101,10 @@ class PressEngine:
                     break
         finally:
             if self._limit_reached:
-                self.on_status(("limit", round(self._limit_seconds())))
+                # Report the value the deadline was taken from: the settings
+                # object is shared with the UI, which may have been re-collected
+                # mid-run, and a moved field must not rewrite what ended it.
+                self.on_status(("limit", round(self._captured_limit)))
             self.on_status(("done", self.count))
 
     def _limit_seconds(self):
@@ -117,11 +121,13 @@ class PressEngine:
         actions begin rather than when Start is pressed: a start delay is time
         spent waiting, not time spent pressing.
         """
+        self._captured_limit = 0.0
         if not self.settings.repeat_until_stopped:
             return None
         seconds = self._limit_seconds()
         if not math.isfinite(seconds) or seconds <= 0:
             return None
+        self._captured_limit = seconds
         return time.monotonic() + seconds
 
     def _limit_hit(self, deadline):

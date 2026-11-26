@@ -1411,6 +1411,19 @@ class StopAfterAppTests(unittest.TestCase):
         self.assertIn("3 times", self.app.summary_var.get())
         self.assertNotIn("at most", self.app.summary_var.get())
 
+    def test_an_invalid_limit_does_not_block_saving_an_action(self):
+        self.app.stop_after_var.set("soon")
+
+        action = self.app._current_action()
+
+        self.assertEqual(action["input_type"], "mouse")
+        self.assertNotIn("stop_after_seconds", action)
+
+    def test_an_out_of_range_limit_does_not_block_saving_an_action(self):
+        self.app.stop_after_var.set("9999")
+
+        self.assertEqual(self.app._current_action()["input_type"], "mouse")
+
     def test_the_limit_round_trips_through_the_saved_config(self):
         self.app.stop_after_var.set("90")
         saved = self.app._collect_config()
