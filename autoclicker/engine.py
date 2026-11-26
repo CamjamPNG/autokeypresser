@@ -30,6 +30,7 @@ class PressSettings:
     random_min_seconds: float = 0.05
     random_max_seconds: float = 0.15
     start_delay_seconds: float = 0.0
+    stop_after_seconds: float = 0.0
 
 
 class PressEngine:
@@ -41,6 +42,8 @@ class PressEngine:
         self._stop_event = threading.Event()
         self._thread = None
         self.count = 0
+        self._limit_reached = False
+        self._captured_limit = 0.0
 
     @property
     def running(self):
@@ -51,6 +54,7 @@ class PressEngine:
             return
         self._stop_event.clear()
         self.count = 0
+        self._limit_reached = False
         self._thread = threading.Thread(target=self._run, daemon=True, name="presser")
         self._thread.start()
 
@@ -69,13 +73,16 @@ class PressEngine:
             limit = None if self.settings.repeat_until_stopped else max(
                 self.settings.repeat_count, 0
             )
+            deadline = self._deadline()
             done = 0
             cycles = 0
             actions = self.settings.actions or [self.settings]
             while not self._stop_event.is_set():
+                if self._limit_hit(deadline):
+                    break
                 last_cycle = limit is not None and cycles + 1 >= limit
                 for position, action in enumerate(actions):
-                    if self._stop_event.is_set():
+                    if self._stop_event.is_set() or self._limit_hit(deadline):
                         break
                     self._press_action(action)
                     self.count += 1
@@ -85,13 +92,66 @@ class PressEngine:
                         # Nothing follows the final press, so waiting here would
                         # hold the run at "Running" for a pause that never ends.
                         break
-                    if self._stop_event.wait(self._next_interval(interval, action)):
+                    if self._pause(self._next_interval(interval, action), deadline):
                         break
+                if self._limit_reached:
+                    break
                 cycles += 1
                 if limit is not None and cycles >= limit:
                     break
         finally:
+            if self._limit_reached:
+                # Report the value the deadline was taken from: the settings
+                # object is shared with the UI, which may have been re-collected
+                # mid-run, and a moved field must not rewrite what ended it.
+                self.on_status(("limit", round(self._captured_limit)))
             self.on_status(("done", self.count))
+
+    def _limit_seconds(self):
+        try:
+            return float(self.settings.stop_after_seconds or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _deadline(self):
+        """The monotonic time the run must end, or None when it has no limit.
+
+        The limit belongs to the until-stopped mode, so an exact-count run keeps
+        running until its count however this is set. The clock starts when the
+        actions begin rather than when Start is pressed: a start delay is time
+        spent waiting, not time spent pressing.
+        """
+        self._captured_limit = 0.0
+        if not self.settings.repeat_until_stopped:
+            return None
+        seconds = self._limit_seconds()
+        if not math.isfinite(seconds) or seconds <= 0:
+            return None
+        self._captured_limit = seconds
+        return time.monotonic() + seconds
+
+    def _limit_hit(self, deadline):
+        """True once the deadline has passed, remembering that the limit ended it."""
+        if deadline is None or time.monotonic() < deadline:
+            return False
+        self._limit_reached = True
+        return True
+
+    def _pause(self, seconds, deadline):
+        """Wait between actions, never past the deadline. True ends the run.
+
+        The wait is clamped to the time left, so even a step delay or a
+        randomized interval leaves at most the action already in flight past the
+        deadline, and a stopped run never sits out a pause it will not use.
+        """
+        if deadline is not None:
+            seconds = min(seconds, max(deadline - time.monotonic(), 0.0))
+            if seconds <= 0:
+                self._limit_reached = True
+                return True
+        if self._stop_event.wait(seconds):
+            return True
+        return self._limit_hit(deadline)
 
     def _pre_roll(self):
         """Wait out the start delay, reporting each whole second left.

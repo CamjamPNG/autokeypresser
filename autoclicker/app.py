@@ -13,7 +13,7 @@ from . import macro, profiles, themes
 from .profiles import load_profiles, save_profiles
 from . import updater
 
-APP_NAME = "AutoKeyPresser 2.0.4"
+APP_NAME = "AutoKeyPresser 2.0.5"
 
 # The action card labels map one-to-one onto the engine's input_type values.
 INPUT_TYPES = {"Mouse": "mouse", "Keyboard": "keyboard", "Text": "text"}
@@ -40,6 +40,7 @@ class InvalidSettings(ValueError):
 
 
 STEP_DELAY_MAX_MS = 60000
+STOP_AFTER_MAX_MIN = 1440
 
 
 def input_type_for(mode):
@@ -96,6 +97,36 @@ def checked_step_delay(raw):
             "Step delay must be between 0 and %d milliseconds." % STEP_DELAY_MAX_MS
         )
     return milliseconds
+
+
+def checked_stop_after(raw):
+    """Return the run duration limit in whole minutes, or None for no limit."""
+    text = str(raw).strip()
+    if not text:
+        return None
+    try:
+        minutes = int(text)
+    except (TypeError, ValueError):
+        raise InvalidSettings(
+            "Stop after must be a whole number of minutes from 0 to %d."
+            % STOP_AFTER_MAX_MIN
+        )
+    if minutes < 0 or minutes > STOP_AFTER_MAX_MIN:
+        raise InvalidSettings(
+            "Stop after must be between 0 and %d minutes." % STOP_AFTER_MAX_MIN
+        )
+    return minutes or None
+
+
+def describe_duration(seconds):
+    """A run duration as the status line writes it, such as "45 min" or "90 s"."""
+    seconds = float(seconds)
+    if seconds < 60:
+        return "%d s" % round(seconds)
+    minutes = seconds / 60.0
+    if minutes == int(minutes):
+        return "%d min" % minutes
+    return "%.1f min" % minutes
 
 
 def settings_to_action(settings):
@@ -329,7 +360,9 @@ class AutoClickerApp:
         self.y_var = tk.StringVar(value="0")
         self.theme_var = tk.StringVar(value=self.config.get("theme", "Aurora"))
         self.start_delay_var = tk.StringVar(value="0")
+        self.stop_after_var = tk.StringVar(value="0")
         self.countdown_var = tk.StringVar(value="")
+        self.limit_notice = None
         self.macro_status_var = tk.StringVar(value="No macro loaded")
         self.status_var = tk.StringVar(value="Ready")
         self.run_state_var = tk.StringVar(value="READY")
@@ -727,6 +760,26 @@ class AutoClickerApp:
             justify="left",
         ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
+        ttk.Label(delay_row, text="STOP AFTER", style="FieldLabel.TLabel").grid(
+            row=3, column=0, columnspan=2, sticky="w", pady=(16, 0)
+        )
+        self.stop_after_spin = ttk.Spinbox(
+            delay_row,
+            from_=0,
+            to=STOP_AFTER_MAX_MIN,
+            increment=5,
+            textvariable=self.stop_after_var,
+            width=7,
+        )
+        self.stop_after_spin.grid(row=4, column=0, sticky="w", pady=(6, 0))
+        ttk.Label(
+            delay_row,
+            text="minutes · 0 means until you stop it",
+            style="CardMuted.TLabel",
+            wraplength=250,
+            justify="left",
+        ).grid(row=4, column=1, sticky="w", padx=(8, 0), pady=(6, 0))
+
         ttk.Separator(run, orient="horizontal").grid(
             row=5, column=0, sticky="ew", pady=(18, 16)
         )
@@ -886,7 +939,7 @@ class AutoClickerApp:
         ttk.Label(footer, textvariable=self.status_var, style="Muted.TLabel").grid(
             row=0, column=1, sticky="w"
         )
-        ttk.Label(footer, text="v2.0.4  •  local by design", style="Quiet.TLabel").grid(
+        ttk.Label(footer, text="v2.0.5  •  local by design", style="Quiet.TLabel").grid(
             row=0, column=2, sticky="e"
         )
 
@@ -911,6 +964,7 @@ class AutoClickerApp:
             self.random_min_var,
             self.random_max_var,
             self.start_delay_var,
+            self.stop_after_var,
         )
         for variable in watched:
             variable.trace_add("write", lambda *_args: self._update_summary())
@@ -1296,11 +1350,17 @@ class AutoClickerApp:
         except ValueError:
             timing = "your interval"
 
-        repeat = (
-            "until you stop it"
-            if self.repeat_mode_var.get() == "until"
-            else "%s times" % (self.repeat_count_var.get() or "1")
-        )
+        limit_minutes = 0
+        try:
+            limit_minutes = int(self.stop_after_var.get() or 0)
+        except ValueError:
+            pass
+        if self.repeat_mode_var.get() == "until":
+            repeat = "until you stop it"
+            if limit_minutes > 0:
+                repeat += ", at most %d min" % limit_minutes
+        else:
+            repeat = "%s times" % (self.repeat_count_var.get() or "1")
         position = (
             "at the live cursor"
             if self.cursor_mode_var.get() == "current"
@@ -1348,6 +1408,9 @@ class AutoClickerApp:
     def _refresh_repeat_fields(self):
         enabled = self.repeat_mode_var.get() == "count"
         self.repeat_count_spin.state(["!disabled"] if enabled else ["disabled"])
+        # A duration limit only ends a run that has no count to end it, so the
+        # field follows the until-stopped mode instead of sitting there inert.
+        self.stop_after_spin.state(["disabled"] if enabled else ["!disabled"])
 
     def _refresh_cursor_fields(self):
         mouse_mode = self.input_type_var.get() == "Mouse"
@@ -1395,6 +1458,7 @@ class AutoClickerApp:
         self.random_min_var.set(str(c.get("random_min_ms", "50")))
         self.random_max_var.set(str(c.get("random_max_ms", "150")))
         self.start_delay_var.set(str(c.get("start_delay_s", "0")))
+        self.stop_after_var.set(str(c.get("stop_after_min", "0")))
         self.theme_var.set(c.get("theme", "Aurora"))
 
     def _collect_config(self):
@@ -1420,6 +1484,7 @@ class AutoClickerApp:
         c["random_min_ms"] = self.random_min_var.get()
         c["random_max_ms"] = self.random_max_var.get()
         c["start_delay_s"] = self.start_delay_var.get()
+        c["stop_after_min"] = self.stop_after_var.get()
         c["theme"] = self.theme_var.get()
         return c
 
@@ -1475,7 +1540,9 @@ class AutoClickerApp:
         self.cursor_mode_var.set("pick")
         self._refresh_cursor_fields()
 
-    def _collect_settings(self, validate_text=True, validate_delay=True):
+    def _collect_settings(
+        self, validate_text=True, validate_delay=True, validate_limit=True
+    ):
         s = self.settings
         s.input_type = input_type_for(self.input_type_var.get())
         if s.input_type != "text":
@@ -1507,10 +1574,15 @@ class AutoClickerApp:
             raise InvalidSettings("Random maximum must not be lower than minimum.")
         if validate_delay:
             s.start_delay_seconds = float(checked_delay(self.start_delay_var.get()))
+        if validate_limit:
+            minutes = checked_stop_after(self.stop_after_var.get())
+            s.stop_after_seconds = float(minutes or 0) * 60.0
         return s
 
     def _current_action(self):
-        return settings_to_action(self._collect_settings())
+        # A profile step never carries the run's duration limit, so it must not
+        # be able to block saving a step while the field holds anything odd.
+        return settings_to_action(self._collect_settings(validate_limit=False))
 
     def _apply_action(self, action):
         self.input_type_var.set(mode_for(action.get("input_type", "mouse")))
@@ -1548,6 +1620,7 @@ class AutoClickerApp:
         except ValueError:
             messagebox.showerror(APP_NAME, "Please enter valid numbers.")
             return
+        self.limit_notice = None
         self.engine = PressEngine(self.settings, on_status=self.queue.put)
         self.settings.actions = list(self.pending_actions)
         self.pending_actions = []
@@ -1591,8 +1664,17 @@ class AutoClickerApp:
                 elif msg == "macro_done":
                     self.play_macro_button.config(text="Play", style="Secondary.TButton")
                     self.macro_status_var.set("Macro finished - actions: %d" % value)
+                elif msg == "limit":
+                    self.limit_notice = describe_duration(value)
                 elif msg == "done":
-                    self.status_var.set("Stopped · %d actions" % value)
+                    if self.limit_notice:
+                        self.status_var.set(
+                            "Stopped · %s limit · %d actions"
+                            % (self.limit_notice, value)
+                        )
+                        self.limit_notice = None
+                    else:
+                        self.status_var.set("Stopped · %d actions" % value)
                     self._update_running_ui(False)
                 elif msg == "update":
                     self._offer_update(value)
@@ -1940,7 +2022,9 @@ class AutoClickerApp:
         try:
             # Playback only needs the repeat rules, so a Text action still being
             # typed must not block a recording the player already holds.
-            settings = self._collect_settings(validate_text=False, validate_delay=False)
+            settings = self._collect_settings(
+                validate_text=False, validate_delay=False, validate_limit=False
+            )
         except InvalidSettings as exc:
             messagebox.showerror(APP_NAME, str(exc))
             return
