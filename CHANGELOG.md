@@ -36,6 +36,15 @@ published GitHub release notes and the repository history.
   as before, and the key is simply absent from old profiles, so no conversion step is
   needed and older builds ignore it. The list names the pause, as in
   `2. Key B · then waits 2000 ms`.
+- Stop after in the run plan: an until-stopped run can be given a duration in minutes and
+  ends itself at that deadline, with Stop or F12 still ending it sooner. The deadline is
+  checked on the same pause that paces the loop, so a run stops on time even when the
+  interval or a step delay is longer than the time left, and it never waits out a pause
+  it will not use. The final `done` message is the one a manual stop sends; the status
+  line names the limit as the reason (`Stopped · 45 min limit · 1200 actions`). The clock
+  starts when the actions begin, so a start delay is not counted against the limit. An
+  exact-count run ignores it entirely. The value is saved as `"stop_after_min"` and
+  defaults to `"0"`, which means no limit.
 
 ## [2.0] - 2026-09-16
 

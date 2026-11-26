@@ -17,7 +17,9 @@ from autoclicker.app import (
     build_hotkey,
     checked_delay,
     checked_step_delay,
+    checked_stop_after,
     checked_text,
+    describe_duration,
     describe_step,
     input_type_for,
     mode_for,
@@ -1207,10 +1209,225 @@ class ProfileStepDelayDialogTests(unittest.TestCase):
         self.assertEqual(self.app.pending_actions, [])
 
 
+class StopAfterValidationTests(unittest.TestCase):
+    def test_a_blank_field_means_no_limit(self):
+        self.assertIsNone(checked_stop_after(""))
+        self.assertIsNone(checked_stop_after("   "))
+        self.assertIsNone(checked_stop_after("0"))
+
+    def test_accepts_the_whole_range(self):
+        self.assertEqual(checked_stop_after("1"), 1)
+        self.assertEqual(checked_stop_after(" 45 "), 45)
+        self.assertEqual(checked_stop_after("1440"), 1440)
+
+    def test_non_numeric_has_its_own_message(self):
+        for raw in ("soon", "2.5", "45 min"):
+            with self.assertRaises(InvalidSettings) as raised:
+                checked_stop_after(raw)
+            self.assertEqual(
+                str(raised.exception),
+                "Stop after must be a whole number of minutes from 0 to 1440.",
+            )
+
+    def test_range_has_its_own_message(self):
+        for raw in ("-1", "1441", "100000"):
+            with self.assertRaises(InvalidSettings) as raised:
+                checked_stop_after(raw)
+            self.assertEqual(
+                str(raised.exception),
+                "Stop after must be between 0 and 1440 minutes.",
+            )
+
+
+class DurationLabelTests(unittest.TestCase):
+    def test_seconds_under_a_minute(self):
+        self.assertEqual(describe_duration(0), "0 s")
+        self.assertEqual(describe_duration(45), "45 s")
+
+    def test_whole_minutes(self):
+        self.assertEqual(describe_duration(60), "1 min")
+        self.assertEqual(describe_duration(2700), "45 min")
+
+    def test_fractional_minutes(self):
+        self.assertEqual(describe_duration(90), "1.5 min")
+
+
+class ConfigStopAfterTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.directory, ignore_errors=True)
+        patcher = mock.patch.multiple(
+            config_module,
+            CONFIG_DIR=self.directory,
+            CONFIG_FILE=self.directory / "config.json",
+            LEGACY_CONFIG_FILE=self.directory / "legacy.json",
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_saved_limit_restores_on_the_next_launch(self):
+        saved = config_module.load_config()
+        saved["stop_after_min"] = "45"
+        config_module.save_config(saved)
+
+        self.assertEqual(config_module.load_config()["stop_after_min"], "45")
+
+    def test_defaults_start_with_no_limit(self):
+        self.assertEqual(config_module.DEFAULTS["stop_after_min"], "0")
+
+    def test_config_saved_before_the_limit_key_still_loads(self):
+        (self.directory / "config.json").write_text(
+            json.dumps({"input_type": "mouse", "ms": "250", "start_delay_s": "5"}),
+            encoding="utf-8",
+        )
+
+        restored = config_module.load_config()
+
+        self.assertEqual(restored["ms"], "250")
+        self.assertEqual(restored["start_delay_s"], "5")
+        self.assertEqual(restored["stop_after_min"], "0")
+
+
+class StopAfterAppTests(unittest.TestCase):
+    def setUp(self):
+        try:
+            self.root = tk.Tk()
+        except tk.TclError as exc:
+            self.skipTest("Tk display unavailable: %s" % exc)
+        self.addCleanup(self.root.destroy)
+        with mock.patch.object(app_module.AutoClickerApp, "_start_hotkey_listener"), \
+             mock.patch.object(app_module.AutoClickerApp, "_check_for_updates"):
+            self.app = app_module.AutoClickerApp(self.root)
+
+    def test_limit_reaches_the_engine_on_start(self):
+        self.app.stop_after_var.set("45")
+
+        with mock.patch.object(app_module, "PressEngine") as engine_class:
+            self.app._start()
+
+        self.assertEqual(self.app.settings.stop_after_seconds, 2700.0)
+        self.assertEqual(engine_class.call_args.args[0].stop_after_seconds, 2700.0)
+
+    def test_a_blank_limit_leaves_the_repeat_until_stopped_run_unbounded(self):
+        self.app.stop_after_var.set("")
+
+        with mock.patch.object(app_module, "PressEngine") as engine_class:
+            self.app._start()
+
+        self.assertEqual(engine_class.call_args.args[0].stop_after_seconds, 0.0)
+
+    def test_out_of_range_limit_is_reported_by_its_own_message(self):
+        self.app.stop_after_var.set("1441")
+
+        with mock.patch.object(app_module, "messagebox") as box, \
+             mock.patch.object(app_module, "PressEngine") as engine_class:
+            self.app._start()
+
+        self.assertEqual(
+            box.showerror.call_args.args[1],
+            "Stop after must be between 0 and 1440 minutes.",
+        )
+        engine_class.assert_not_called()
+
+    def test_non_numeric_limit_is_reported_by_its_own_message(self):
+        self.app.stop_after_var.set("soon")
+
+        with mock.patch.object(app_module, "messagebox") as box, \
+             mock.patch.object(app_module, "PressEngine") as engine_class:
+            self.app._start()
+
+        self.assertEqual(
+            box.showerror.call_args.args[1],
+            "Stop after must be a whole number of minutes from 0 to 1440.",
+        )
+        engine_class.assert_not_called()
+
+    def test_macro_playback_ignores_an_invalid_limit(self):
+        self.app.stop_after_var.set("soon")
+        self.app.last_macro = [{"kind": "key", "key": "a", "action": "press", "at": 0.0}]
+
+        with mock.patch.object(app_module, "messagebox") as box, \
+             mock.patch.object(app_module.macro, "MacroPlayer") as player:
+            self.app._play_macro()
+
+        box.showerror.assert_not_called()
+        player.assert_called_once()
+
+    def test_the_field_follows_the_repeat_mode(self):
+        self.app.repeat_mode_var.set("until")
+        self.app._refresh_repeat_fields()
+        self.assertFalse(self.app.stop_after_spin.instate(["disabled"]))
+
+        self.app.repeat_mode_var.set("count")
+        self.app._refresh_repeat_fields()
+        self.assertTrue(self.app.stop_after_spin.instate(["disabled"]))
+
+    def test_the_status_line_names_the_limit_that_ended_the_run(self):
+        self.app.stop_after_var.set("45")
+        with mock.patch.object(app_module, "PressEngine"):
+            self.app._start()
+
+        self.app.queue.put(("limit", 2700))
+        self.app.queue.put(("done", 120))
+        self.app._poll_queue()
+
+        self.assertEqual(
+            self.app.status_var.get(), "Stopped · 45 min limit · 120 actions"
+        )
+
+    def test_a_manual_stop_keeps_the_plain_status_line(self):
+        with mock.patch.object(app_module, "PressEngine"):
+            self.app._start()
+
+        self.app.queue.put(("done", 1))
+        self.app._poll_queue()
+
+        self.assertEqual(self.app.status_var.get(), "Stopped · 1 actions")
+
+    def test_a_later_run_does_not_inherit_the_last_runs_limit_note(self):
+        self.app.queue.put(("limit", 2700))
+        self.app.queue.put(("done", 12))
+        self.app._poll_queue()
+        self.assertEqual(
+            self.app.status_var.get(), "Stopped · 45 min limit · 12 actions"
+        )
+
+        with mock.patch.object(app_module, "PressEngine"):
+            self.app._start()
+        self.app.queue.put(("done", 3))
+        self.app._poll_queue()
+
+        self.assertEqual(self.app.status_var.get(), "Stopped · 3 actions")
+
+    def test_the_summary_names_the_limit_only_while_repeating_until_stopped(self):
+        self.app.stop_after_var.set("45")
+        self.app.repeat_mode_var.set("until")
+        self.app._update_summary()
+        self.assertIn("until you stop it, at most 45 min", self.app.summary_var.get())
+
+        self.app.repeat_mode_var.set("count")
+        self.app.repeat_count_var.set("3")
+        self.app._update_summary()
+        self.assertIn("3 times", self.app.summary_var.get())
+        self.assertNotIn("at most", self.app.summary_var.get())
+
+    def test_the_limit_round_trips_through_the_saved_config(self):
+        self.app.stop_after_var.set("90")
+        saved = self.app._collect_config()
+
+        self.assertEqual(saved["stop_after_min"], "90")
+
+        self.app.stop_after_var.set("0")
+        self.app.config = dict(saved)
+        self.app._apply_config()
+
+        self.assertEqual(self.app.stop_after_var.get(), "90")
+
+
 class VersionTests(unittest.TestCase):
     def test_app_reports_the_version_the_updater_checks(self):
-        self.assertEqual(updater.CURRENT_VERSION, "2.0.4")
-        self.assertEqual(APP_NAME, "AutoKeyPresser 2.0.4")
+        self.assertEqual(updater.CURRENT_VERSION, "2.0.5")
+        self.assertEqual(APP_NAME, "AutoKeyPresser 2.0.5")
 
 
 class UpdaterTests(unittest.TestCase):

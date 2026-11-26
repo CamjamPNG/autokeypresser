@@ -420,5 +420,169 @@ class PerStepDelayTests(unittest.TestCase):
         self.assertLess(second_gap, 0.35)
 
 
+class StopAfterTests(unittest.TestCase):
+    """An until-stopped run ends itself at its deadline and says so."""
+
+    def run_engine(self, timeout=5, **overrides):
+        settings = make_engine(**overrides)
+        statuses = []
+        with mock.patch("autoclicker.engine.pyautogui.click"):
+            engine = PressEngine(settings, on_status=statuses.append)
+            started = time.monotonic()
+            engine.start()
+            engine._thread.join(timeout=timeout)
+            elapsed = time.monotonic() - started
+        return engine, statuses, elapsed
+
+    def limit_messages(self, statuses):
+        return [value for msg, value in statuses if msg == "limit"]
+
+    def test_the_run_ends_at_the_deadline_and_still_reports_done(self):
+        engine, statuses, elapsed = self.run_engine(
+            repeat_until_stopped=True, interval_seconds=0.02, stop_after_seconds=0.6
+        )
+
+        self.assertFalse(engine.running)
+        # A band, not just "it stopped": the deadline is 0.6 s, so a run that
+        # ignored the limit, or read it as minutes, lands far outside this.
+        self.assertGreaterEqual(elapsed, 0.55)
+        self.assertLess(elapsed, 1.6)
+        self.assertGreater(engine.count, 1)
+        self.assertEqual(statuses[-1], ("done", engine.count))
+
+    def test_the_limit_is_reported_before_the_final_done(self):
+        _, statuses, _ = self.run_engine(
+            repeat_until_stopped=True, interval_seconds=0.02, stop_after_seconds=1
+        )
+
+        self.assertEqual(self.limit_messages(statuses), [1])
+        self.assertLessEqual(statuses.index(("limit", 1)), len(statuses) - 1)
+        self.assertEqual(statuses[-1][0], "done")
+
+    def test_a_manual_stop_before_the_deadline_wins(self):
+        settings = make_engine(
+            repeat_until_stopped=True, interval_seconds=0.02, stop_after_seconds=30
+        )
+        statuses = []
+        with mock.patch("autoclicker.engine.pyautogui.click"):
+            engine = PressEngine(settings, on_status=statuses.append)
+            started = time.monotonic()
+            engine.start()
+            time.sleep(0.15)
+            engine.stop()
+            engine._thread.join(timeout=3)
+            elapsed = time.monotonic() - started
+
+        self.assertFalse(engine.running)
+        self.assertLess(elapsed, 1.5)
+        self.assertEqual(statuses[-1], ("done", engine.count))
+        self.assertEqual(self.limit_messages(statuses), [])
+
+    def test_an_exact_count_run_ignores_the_limit(self):
+        engine, statuses, elapsed = self.run_engine(
+            repeat_until_stopped=False,
+            repeat_count=3,
+            interval_seconds=0.1,
+            stop_after_seconds=0.05,
+        )
+
+        self.assertEqual(engine.count, 3)
+        self.assertGreaterEqual(elapsed, 0.15)
+        self.assertEqual(statuses[-1], ("done", 3))
+        self.assertEqual(self.limit_messages(statuses), [])
+
+    def test_an_exact_count_run_still_finishes_immediately(self):
+        engine, statuses, elapsed = self.run_engine(
+            repeat_until_stopped=False,
+            repeat_count=2,
+            interval_seconds=0,
+            stop_after_seconds=3600,
+        )
+
+        self.assertEqual(engine.count, 2)
+        self.assertLess(elapsed, 0.3)
+        self.assertEqual(statuses[-1], ("done", 2))
+
+    def test_the_start_delay_is_not_counted_against_the_limit(self):
+        engine, statuses, elapsed = self.run_engine(
+            repeat_until_stopped=True,
+            interval_seconds=0.02,
+            start_delay_seconds=0.5,
+            stop_after_seconds=1,
+        )
+
+        # 0.5 s of waiting plus 1 s of pressing, so the limit cannot start at
+        # Start: a clock that did would stop the run before it pressed at all.
+        self.assertGreaterEqual(elapsed, 1.4)
+        self.assertLess(elapsed, 2.5)
+        self.assertGreater(engine.count, 0)
+        self.assertEqual(self.limit_messages(statuses), [1])
+
+    def test_the_limit_does_not_wait_out_a_long_pause(self):
+        _, statuses, elapsed = self.run_engine(
+            repeat_until_stopped=True, interval_seconds=5, stop_after_seconds=0.4
+        )
+
+        self.assertLess(elapsed, 2.0)
+        self.assertEqual(statuses[-1][0], "done")
+        self.assertEqual(self.limit_messages(statuses), [0])
+
+    def test_a_long_step_delay_does_not_overshoot_the_deadline(self):
+        settings = make_engine(
+            input_type="keyboard",
+            interval_seconds=0,
+            repeat_until_stopped=True,
+            stop_after_seconds=0.4,
+        )
+        settings.actions = [
+            {"input_type": "keyboard", "key": "a", "delay_ms": 5000},
+            {"input_type": "keyboard", "key": "b"},
+        ]
+        statuses = []
+        with mock.patch("autoclicker.engine.pyautogui.press"):
+            engine = PressEngine(settings, on_status=statuses.append)
+            started = time.monotonic()
+            engine.start()
+            engine._thread.join(timeout=3)
+            elapsed = time.monotonic() - started
+
+        # The clamped pause ends the run at the deadline, so the second action
+        # of that cycle never runs: at most the action in flight goes past it.
+        self.assertEqual(engine.count, 1)
+        self.assertGreaterEqual(elapsed, 0.35)
+        self.assertLess(elapsed, 1.0)
+        self.assertEqual(statuses[-1], ("done", 1))
+
+    def test_a_randomized_interval_does_not_overshoot_the_deadline(self):
+        _, _, elapsed = self.run_engine(
+            repeat_until_stopped=True,
+            interval_seconds=0.02,
+            randomize_interval=True,
+            random_min_seconds=2.0,
+            random_max_seconds=3.0,
+            stop_after_seconds=0.3,
+        )
+
+        self.assertLess(elapsed, 1.2)
+
+    def test_a_zero_or_unreadable_limit_means_no_deadline(self):
+        for seconds in (0, 0.0, None, -5, float("inf"), float("nan"), "soon"):
+            engine = PressEngine(
+                make_engine(repeat_until_stopped=True, stop_after_seconds=seconds),
+                on_status=lambda _m: None,
+            )
+            self.assertIsNone(engine._deadline(), seconds)
+
+    def test_a_count_run_has_no_deadline(self):
+        engine = PressEngine(
+            make_engine(
+                repeat_until_stopped=False, repeat_count=2, stop_after_seconds=60
+            ),
+            on_status=lambda _m: None,
+        )
+
+        self.assertIsNone(engine._deadline())
+
+
 if __name__ == "__main__":
     unittest.main()

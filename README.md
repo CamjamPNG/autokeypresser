@@ -33,6 +33,8 @@ mouse button from a modern, focused desktop workspace.
  * Choose mouse button [Left/Right/Middle];
  * Choose press type [Single/Double];
  * Repeat until stopped or repeat a given amount of times;
+ * Stop after a set duration, so an until-stopped run ends itself instead of
+   pressing all night;
  * Click on the current cursor location or a specified fixed location only;
  * Start / Stop with a custom global hotkey [default F6];
  * Settings are remembered between runs;
