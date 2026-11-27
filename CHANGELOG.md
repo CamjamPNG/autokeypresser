@@ -45,6 +45,18 @@ published GitHub release notes and the repository history.
   starts when the actions begin, so a start delay is not counted against the limit. An
   exact-count run ignores it entirely. The value is saved as `"stop_after_min"` and
   defaults to `"0"`, which means no limit.
+- Startup notice when input automation cannot work on this PC. A Wayland session is
+  now reported at launch with what actually fails (keys and clicks from this app do
+  not reach native Wayland windows, and the global hotkey and F12 only see X11
+  windows there), with the note that an app running under XWayland still receives
+  input, and with the fix when the target is a Wayland app: log out and pick an
+  Xorg or X11 session at the login screen. macOS without the
+  Accessibility permission is reported the same way, naming System Settings >
+  Privacy & Security > Accessibility for Start, with Input Monitoring mentioned
+  only for the hotkey and macro recorder. The check reads `XDG_SESSION_TYPE` and
+  the macOS trust answer through `ctypes`, both standard library, and shows a
+  single dismissible notice that never blocks the window; Windows, X11, and any
+  session it cannot read stay silent, so a failed check never raises a false alarm.
 
 ## [2.0] - 2026-09-16
 

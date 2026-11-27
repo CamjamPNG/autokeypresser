@@ -3,12 +3,14 @@ import pathlib
 import shutil
 import tempfile
 import tkinter as tk
+from tkinter import ttk
 import unittest
 from unittest import mock
 
 from autoclicker import app as app_module
 from autoclicker import config as config_module
 from autoclicker import keys
+from autoclicker import preflight
 from autoclicker import profiles as profiles_module
 from autoclicker import updater
 from autoclicker.app import (
@@ -1439,8 +1441,8 @@ class StopAfterAppTests(unittest.TestCase):
 
 class VersionTests(unittest.TestCase):
     def test_app_reports_the_version_the_updater_checks(self):
-        self.assertEqual(updater.CURRENT_VERSION, "2.0.5")
-        self.assertEqual(APP_NAME, "AutoKeyPresser 2.0.5")
+        self.assertEqual(updater.CURRENT_VERSION, "2.0.6")
+        self.assertEqual(APP_NAME, "AutoKeyPresser 2.0.6")
 
 
 class UpdaterTests(unittest.TestCase):
@@ -1454,6 +1456,50 @@ class UpdaterTests(unittest.TestCase):
         release = {"assets": [{"name": "AutoKeyPresser-Setup.exe", "browser_download_url": "url"}]}
         with mock.patch.object(updater.platform, "system", return_value="Windows"):
             self.assertEqual(updater.installer_asset(release), "url")
+
+class StartupNoticeTests(unittest.TestCase):
+    """The notice window itself: one per launch, dismissible, and silent otherwise."""
+
+    def setUp(self):
+        try:
+            self.root = tk.Tk()
+        except tk.TclError as exc:
+            self.skipTest("Tk display unavailable: %s" % exc)
+        self.addCleanup(self.root.destroy)
+        self.root.withdraw()
+        with mock.patch.object(app_module.AutoClickerApp, "_start_hotkey_listener"), \
+             mock.patch.object(app_module.AutoClickerApp, "_check_for_updates"):
+            self.app = app_module.AutoClickerApp(self.root)
+
+    def notices(self):
+        self.root.update_idletasks()
+        return [w for w in self.root.winfo_children() if isinstance(w, tk.Toplevel)]
+
+    def test_an_unsupported_session_opens_one_dismissible_notice(self):
+        notice = preflight.Preflight(preflight.UNSUPPORTED, preflight.WAYLAND_MESSAGE)
+        with mock.patch.object(app_module.preflight, "startup_notice", return_value=notice):
+            self.app._check_input_support()
+
+        windows = self.notices()
+        self.assertEqual(len(windows), 1)
+        window = windows[0]
+        self.assertEqual(window.title(), preflight.TITLE)
+
+        buttons = [
+            w for w in window.winfo_children()[0].winfo_children() if isinstance(w, ttk.Button)
+        ]
+        self.assertEqual([button.cget("text") for button in buttons], ["Dismiss"])
+        buttons[0].invoke()
+
+        self.root.update_idletasks()
+        self.assertFalse(window.winfo_exists())
+        self.assertEqual(self.notices(), [])
+
+    def test_a_supported_session_opens_nothing(self):
+        with mock.patch.object(app_module.preflight, "startup_notice", return_value=None):
+            self.app._check_input_support()
+
+        self.assertEqual(self.notices(), [])
 
 
 if __name__ == "__main__":
