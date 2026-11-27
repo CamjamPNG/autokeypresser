@@ -1,3 +1,4 @@
+import sys
 import unittest
 from unittest import mock
 
@@ -97,6 +98,11 @@ class ProbeTests(unittest.TestCase):
             raise OSError("framework unavailable")
 
         self.assertEqual(probe("darwin", accessibility_trust=explode).state, UNKNOWN)
+
+    @unittest.skipUnless(sys.platform == "darwin", "reads the real macOS framework")
+    def test_the_real_framework_reads_on_macos(self):
+        """The only check of the live ctypes path: CI's macOS job runs this one."""
+        self.assertIn(preflight._macos_accessibility_trusted(), (True, False))
 
     def test_macos_framework_that_will_not_load_is_unknown(self):
         with mock.patch("ctypes.cdll.LoadLibrary", side_effect=OSError("no framework")):
