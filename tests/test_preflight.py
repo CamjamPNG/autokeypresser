@@ -35,6 +35,11 @@ class AssessTests(unittest.TestCase):
         # does apply when the target is an X11 window.
         self.assertIn("native Wayland windows", result.message)
         self.assertIn("hotkey", result.message)
+        # The "nothing to fix" reassurance comes before the fix, so a reader
+        # with an XWayland target does not stop at "Fix:" and log out for nothing.
+        self.assertLess(
+            result.message.index("nothing to fix"), result.message.index("Fix:")
+        )
 
     def test_wayland_variant_is_unsupported(self):
         self.assertEqual(assess("linux", session_type="Wayland").state, UNSUPPORTED)

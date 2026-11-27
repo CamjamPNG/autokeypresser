@@ -48,8 +48,9 @@ published GitHub release notes and the repository history.
 - Startup notice when input automation cannot work on this PC. A Wayland session is
   now reported at launch with what actually fails (keys and clicks from this app do
   not reach native Wayland windows, and the global hotkey and F12 only see X11
-  windows there) and with the fix: log out and pick an Xorg or X11 session at the
-  login screen when the app you automate is a Wayland app. macOS without the
+  windows there), with the note that an app running under XWayland still receives
+  input, and with the fix when the target is a Wayland app: log out and pick an
+  Xorg or X11 session at the login screen. macOS without the
   Accessibility permission is reported the same way, naming System Settings >
   Privacy & Security > Accessibility for Start, with Input Monitoring mentioned
   only for the hotkey and macro recorder. The check reads `XDG_SESSION_TYPE` and
