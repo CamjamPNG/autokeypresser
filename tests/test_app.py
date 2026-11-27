@@ -1439,8 +1439,8 @@ class StopAfterAppTests(unittest.TestCase):
 
 class VersionTests(unittest.TestCase):
     def test_app_reports_the_version_the_updater_checks(self):
-        self.assertEqual(updater.CURRENT_VERSION, "2.0.5")
-        self.assertEqual(APP_NAME, "AutoKeyPresser 2.0.5")
+        self.assertEqual(updater.CURRENT_VERSION, "2.0.6")
+        self.assertEqual(APP_NAME, "AutoKeyPresser 2.0.6")
 
 
 class UpdaterTests(unittest.TestCase):

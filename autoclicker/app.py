@@ -9,11 +9,11 @@ import webbrowser
 from . import keys as keymod
 from .config import load_config, save_config
 from .engine import PressEngine, PressSettings
-from . import macro, profiles, themes
+from . import macro, preflight, profiles, themes
 from .profiles import load_profiles, save_profiles
 from . import updater
 
-APP_NAME = "AutoKeyPresser 2.0.5"
+APP_NAME = "AutoKeyPresser 2.0.6"
 
 # The action card labels map one-to-one onto the engine's input_type values.
 INPUT_TYPES = {"Mouse": "mouse", "Keyboard": "keyboard", "Text": "text"}
@@ -333,6 +333,7 @@ class AutoClickerApp:
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.root.after(80, self._poll_queue)
         self.root.after(1200, self._check_for_updates)
+        self.root.after(400, self._check_input_support)
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self):
@@ -939,7 +940,7 @@ class AutoClickerApp:
         ttk.Label(footer, textvariable=self.status_var, style="Muted.TLabel").grid(
             row=0, column=1, sticky="w"
         )
-        ttk.Label(footer, text="v2.0.5  •  local by design", style="Quiet.TLabel").grid(
+        ttk.Label(footer, text="v2.0.6  •  local by design", style="Quiet.TLabel").grid(
             row=0, column=2, sticky="e"
         )
 
@@ -1730,6 +1731,39 @@ class AutoClickerApp:
             return
         updater.launch_installer(path)
         self._on_close()
+
+    # -------------------------------------------------------------- preflight
+    def _check_input_support(self):
+        """Say once at launch when this session cannot send input at all."""
+        notice = preflight.startup_notice()
+        if notice is None:
+            return
+        win = tk.Toplevel(self.root)
+        win.title(preflight.TITLE)
+        win.configure(bg=self.current_theme["colors"]["window"])
+        win.resizable(False, False)
+        win.transient(self.root)
+
+        body = ttk.Frame(win, style="App.TFrame", padding=24)
+        body.pack(fill="both", expand=True)
+        body.grid_columnconfigure(0, weight=1)
+        ttk.Label(body, text=preflight.TITLE, style="Title.TLabel").grid(
+            row=0, column=0, sticky="w", pady=(0, 10)
+        )
+        ttk.Label(
+            body,
+            text=notice.message,
+            justify="left",
+            wraplength=510,
+        ).grid(row=1, column=0, sticky="w")
+        ttk.Button(body, text="Dismiss", style="Primary.TButton", command=win.destroy).grid(
+            row=2, column=0, sticky="e", pady=(20, 0)
+        )
+        # Size to the wrapped text instead of a guessed height, so a long fix
+        # is never clipped and a short one leaves no empty space.
+        win.update_idletasks()
+        self._center_dialog(win, 560, win.winfo_reqheight())
+        win.bind("<Escape>", lambda _event: win.destroy())
 
     # ----------------------------------------------------------------- hotkey
     def _start_hotkey_listener(self):
