@@ -31,6 +31,10 @@ class AssessTests(unittest.TestCase):
         self.assertIn("X11", result.message)
         self.assertIn("Xorg", result.message)
         self.assertIn("log out", result.message)
+        # The advice stops at the app it cannot reach, and names the hazard that
+        # does apply when the target is an X11 window.
+        self.assertIn("native Wayland windows", result.message)
+        self.assertIn("hotkey", result.message)
 
     def test_wayland_variant_is_unsupported(self):
         self.assertEqual(assess("linux", session_type="Wayland").state, UNSUPPORTED)
@@ -47,6 +51,9 @@ class AssessTests(unittest.TestCase):
         self.assertIn("Accessibility", result.message)
         self.assertIn("System Settings", result.message)
         self.assertIn("Security", result.message)
+        self.assertNotIn("will not receive anything", result.message)
+        # Input Monitoring is the hotkey's and recorder's grant, not the send's.
+        self.assertIn("hotkey", result.message)
 
     def test_macos_without_a_reading_is_unknown_and_silent(self):
         result = assess("darwin", accessibility_trusted=None)

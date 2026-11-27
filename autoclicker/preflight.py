@@ -21,20 +21,27 @@ TITLE = "Input automation is not available"
 
 WAYLAND_MESSAGE = (
     "This Linux session runs Wayland, and AutoKeyPresser sends input through "
-    "X11 only, so the app you automate will not receive anything.\n\n"
-    "Fix: log out, choose an Xorg or X11 session at the login screen (on "
-    "Ubuntu, the gear menu beside Sign in), then start AutoKeyPresser again. "
-    "XWayland does not help here: it runs X11 apps, but the keys this app "
-    "sends still do not reach Wayland windows."
+    "X11, so its keys and clicks do not reach native Wayland windows.\n\n"
+    "Fix: if the app you automate is a Wayland app, log out and choose an Xorg "
+    "or X11 session at the login screen (on Ubuntu, the gear menu beside Sign "
+    "in), then start AutoKeyPresser again.\n\n"
+    "If it runs under XWayland - a Wine or Proton game, a Java app, or anything "
+    "started with GDK_BACKEND=x11 or QT_QPA_PLATFORM=xcb - the input does "
+    "arrive. Newer GNOME and KDE releases can forward it to Wayland windows as "
+    "well, once you approve their one-time remote-interaction prompt.\n\n"
+    "Either way the global hotkey and the F12 emergency stop only see X11 "
+    "windows on Wayland, so stop a run from this window rather than relying on "
+    "them."
 )
 
 MACOS_MESSAGE = (
     "macOS has not granted AutoKeyPresser the Accessibility permission, so "
     "Start will run and nothing will be sent.\n\n"
     "Fix: open System Settings > Privacy & Security > Accessibility and turn "
-    "AutoKeyPresser on, then allow it under Privacy & Security > Input "
-    "Monitoring as well. If you start the app from a terminal, grant that "
-    "terminal the permission instead. Quit and reopen the app after granting it."
+    "AutoKeyPresser on, then quit and reopen the app. If you start the app from "
+    "a terminal, grant that terminal the permission instead. If the global "
+    "hotkey or the macro recorder does nothing, also allow it under Privacy & "
+    "Security > Input Monitoring."
 )
 
 # Loading the framework, not the call into it, is what fails on a macOS build
