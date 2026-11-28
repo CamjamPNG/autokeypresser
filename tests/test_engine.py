@@ -500,7 +500,10 @@ class StopAfterTests(unittest.TestCase):
         )
 
         self.assertEqual(engine.count, 2)
-        self.assertLess(elapsed, 0.3)
+        # A count run ignores the 3600 s deadline, so a run that failed to end
+        # at its count is still going at the join timeout. The bound stays far
+        # under that and far over any thread-start overhead on a loaded runner.
+        self.assertLess(elapsed, 2.0)
         self.assertEqual(statuses[-1], ("done", 2))
 
     def test_the_start_delay_is_not_counted_against_the_limit(self):
@@ -548,9 +551,12 @@ class StopAfterTests(unittest.TestCase):
 
         # The clamped pause ends the run at the deadline, so the second action
         # of that cycle never runs: at most the action in flight goes past it.
+        # The bound sits well under the 5000 ms step delay, so an unclamped
+        # pause still fails here, and well over any scheduling delay a loaded
+        # runner adds: this asserts the clamp, not that the machine was quick.
         self.assertEqual(engine.count, 1)
         self.assertGreaterEqual(elapsed, 0.35)
-        self.assertLess(elapsed, 1.0)
+        self.assertLess(elapsed, 2.5)
         self.assertEqual(statuses[-1], ("done", 1))
 
     def test_a_randomized_interval_does_not_overshoot_the_deadline(self):
