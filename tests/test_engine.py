@@ -1,5 +1,7 @@
+import math
 import threading
 import time
+import types
 import unittest
 from unittest import mock
 
@@ -615,10 +617,43 @@ class StopAfterReviewFixTests(unittest.TestCase):
         self.assertEqual(statuses[-1], ("done", engine.count))
 
 
-class DeadlineGranularityTests(unittest.TestCase):
-    """A wait that returns a fraction of a tick early must not fire another action."""
+class CoarseMonotonicClock:
+    """Windows' monotonic clock in CPython 3.12: GetTickCount64, 15.625 ms a tick.
 
-    def run_with_early_wait(self, shave_seconds):
+    The clock reports the tick that has finished, so a read taken just after the
+    deadline can still name the previous one. Everything else is passed through to the
+    real time module, so the wait and the thread stay real.
+    """
+
+    def __init__(self, resolution):
+        self.resolution = resolution
+        self.origin = time.monotonic()
+
+    def __getattr__(self, name):
+        return getattr(time, name)
+
+    def monotonic(self):
+        return self.origin + math.floor(
+            (time.monotonic() - self.origin) / self.resolution
+        ) * self.resolution
+
+    def get_clock_info(self, name):
+        info = time.get_clock_info(name)
+        return types.SimpleNamespace(
+            implementation=info.implementation,
+            monotonic=info.monotonic,
+            adjustable=info.adjustable,
+            resolution=self.resolution,
+        )
+
+
+class DeadlineSlackTests(unittest.TestCase):
+    """A deadline check has to allow for the granularity of the clock it reads."""
+
+    # The timer increment windows-latest reports for GetTickCount64.
+    WINDOWS_TICK_SECONDS = 0.015625
+
+    def run_with_coarse_clock(self, resolution):
         settings = make_engine(
             input_type="keyboard",
             interval_seconds=0,
@@ -634,31 +669,23 @@ class DeadlineGranularityTests(unittest.TestCase):
         with mock.patch(
             "autoclicker.engine.pyautogui.press",
             side_effect=lambda key: pressed.append(key),
+        ), mock.patch.object(
+            engine_module, "time", CoarseMonotonicClock(resolution)
         ):
             engine = PressEngine(settings, on_status=statuses.append)
-            # Windows' threading.Event.wait truncates its timeout to whole
-            # milliseconds, so the clamped 0.4 s pause returns up to a tick early.
-            # Any platform's timer granularity does the same, and this is the one
-            # case that put a second action of the cycle past the deadline.
-            wait = engine._stop_event.wait
-
-            def early_wait(timeout=None):
-                if timeout is not None and timeout > 0.05:
-                    timeout = max(timeout - shave_seconds, 0)
-                return wait(timeout)
-
-            engine._stop_event.wait = early_wait
             engine.start()
             engine._thread.join(timeout=3)
 
         self.assertFalse(engine.running)
         return engine, statuses, pressed
 
-    def test_an_early_wait_still_ends_the_run_at_the_deadline(self):
-        engine, statuses, pressed = self.run_with_early_wait(0.001)
+    def test_a_coarse_clock_does_not_fire_another_action_past_the_deadline(self):
+        engine, statuses, pressed = self.run_with_coarse_clock(
+            self.WINDOWS_TICK_SECONDS
+        )
 
-        # The pause ended inside the last tick before the deadline, which the loop
-        # used to read as "not yet": the run pressed b as well and reported 2.
+        # The pause ends inside the last tick before the deadline, which the check used
+        # to read as "not yet": the run pressed b as well and reported 2.
         self.assertEqual(pressed, ["a"])
         self.assertEqual(engine.count, 1)
         self.assertEqual(statuses[-1], ("done", 1))

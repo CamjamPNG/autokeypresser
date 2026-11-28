@@ -60,12 +60,13 @@ published GitHub release notes and the repository history.
 
 ### Fixed
 
-- A run with a "Stop after" limit could send one extra action past the deadline on
-  Windows. The pause between actions is clamped to the time left, but Windows'
-  `threading.Event.wait` truncates its timeout to whole milliseconds, so the pause
-  returned up to a tick before the deadline and the engine read that as "not yet
-  reached" and started the next step of the cycle. The deadline now counts as reached
-  within one timer tick of slack, so nothing but the action in flight passes it.
+- A run with a "Stop after" limit could send an extra action past the deadline on
+  Windows. The engine compares the monotonic clock against the deadline, and Windows'
+  clock is coarser than the millisecond the check assumed: CPython 3.12 reads
+  `GetTickCount64`, whose resolution is 15.625 ms, so a check taken just after the pause
+  clamped to the deadline could still report the previous tick and start another step.
+  The deadline now allows one tick of the clock it reads, taken from the platform's own
+  reported resolution rather than assumed.
 
 ## [2.0] - 2026-09-16
 

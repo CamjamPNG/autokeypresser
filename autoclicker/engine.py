@@ -8,11 +8,10 @@ import pyautogui
 
 from .profiles import step_delay_seconds
 
-# threading.Event.wait truncates its timeout to whole milliseconds on Windows, and
-# every platform's timer has a granularity, so a pause clamped to the time left can
-# return a fraction of a tick before the deadline. Within this slack the deadline
-# counts as reached.
-_DEADLINE_TOLERANCE_SECONDS = 0.001
+# A deadline check can only be as precise as the clock it reads. Windows' CPython 3.12
+# monotonic clock is GetTickCount64 at a 15.625 ms resolution, so this floor keeps the
+# check honest on the sub-millisecond clocks and the real resolution is used elsewhere.
+_MIN_DEADLINE_SLACK_SECONDS = 0.001
 
 
 @dataclass
@@ -50,6 +49,7 @@ class PressEngine:
         self.count = 0
         self._limit_reached = False
         self._captured_limit = 0.0
+        self._deadline_slack = _MIN_DEADLINE_SLACK_SECONDS
 
     @property
     def running(self):
@@ -134,18 +134,24 @@ class PressEngine:
         if not math.isfinite(seconds) or seconds <= 0:
             return None
         self._captured_limit = seconds
+        # The slack for the deadline comparisons is the resolution of the clock they
+        # read: measured from the platform, not assumed.
+        self._deadline_slack = max(
+            _MIN_DEADLINE_SLACK_SECONDS, time.get_clock_info("monotonic").resolution
+        )
         return time.monotonic() + seconds
 
     def _limit_hit(self, deadline):
         """True once the deadline has passed, remembering that the limit ended it.
 
-        The comparison keeps one timer tick of slack. A wait clamped to the time left
-        can return a fraction of a tick early - Windows truncates the timeout to whole
-        milliseconds - and without the slack this read as "deadline not reached" and
-        let the next action of the cycle fire, so two actions passed the deadline
-        instead of the one in flight.
+        The comparison allows one tick of the clock it reads. A clock coarser than the
+        deadline check assumed - Windows' CPython 3.12 monotonic clock is
+        GetTickCount64 at 15.625 ms - reports the previous tick for a moment after the
+        pause clamped to the deadline ends, and without that slack the run read "not
+        reached" and sent the next action of the cycle as well. An action passes the
+        deadline only when the platform's clock or wait error is coarser than the tick.
         """
-        if deadline is None or time.monotonic() < deadline - _DEADLINE_TOLERANCE_SECONDS:
+        if deadline is None or time.monotonic() < deadline - self._deadline_slack:
             return False
         self._limit_reached = True
         return True
