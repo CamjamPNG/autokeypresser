@@ -58,6 +58,15 @@ published GitHub release notes and the repository history.
   single dismissible notice that never blocks the window; Windows, X11, and any
   session it cannot read stay silent, so a failed check never raises a false alarm.
 
+### Fixed
+
+- A run with a "Stop after" limit could send one extra action past the deadline on
+  Windows. The pause between actions is clamped to the time left, but Windows'
+  `threading.Event.wait` truncates its timeout to whole milliseconds, so the pause
+  returned up to a tick before the deadline and the engine read that as "not yet
+  reached" and started the next step of the cycle. The deadline now counts as reached
+  within one timer tick of slack, so nothing but the action in flight passes it.
+
 ## [2.0] - 2026-09-16
 
 ### Added

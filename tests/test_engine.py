@@ -615,5 +615,54 @@ class StopAfterReviewFixTests(unittest.TestCase):
         self.assertEqual(statuses[-1], ("done", engine.count))
 
 
+class DeadlineGranularityTests(unittest.TestCase):
+    """A wait that returns a fraction of a tick early must not fire another action."""
+
+    def run_with_early_wait(self, shave_seconds):
+        settings = make_engine(
+            input_type="keyboard",
+            interval_seconds=0,
+            repeat_until_stopped=True,
+            stop_after_seconds=0.4,
+        )
+        settings.actions = [
+            {"input_type": "keyboard", "key": "a", "delay_ms": 5000},
+            {"input_type": "keyboard", "key": "b"},
+        ]
+        pressed = []
+        statuses = []
+        with mock.patch(
+            "autoclicker.engine.pyautogui.press",
+            side_effect=lambda key: pressed.append(key),
+        ):
+            engine = PressEngine(settings, on_status=statuses.append)
+            # Windows' threading.Event.wait truncates its timeout to whole
+            # milliseconds, so the clamped 0.4 s pause returns up to a tick early.
+            # Any platform's timer granularity does the same, and this is the one
+            # case that put a second action of the cycle past the deadline.
+            wait = engine._stop_event.wait
+
+            def early_wait(timeout=None):
+                if timeout is not None and timeout > 0.05:
+                    timeout = max(timeout - shave_seconds, 0)
+                return wait(timeout)
+
+            engine._stop_event.wait = early_wait
+            engine.start()
+            engine._thread.join(timeout=3)
+
+        self.assertFalse(engine.running)
+        return engine, statuses, pressed
+
+    def test_an_early_wait_still_ends_the_run_at_the_deadline(self):
+        engine, statuses, pressed = self.run_with_early_wait(0.001)
+
+        # The pause ended inside the last tick before the deadline, which the loop
+        # used to read as "not yet": the run pressed b as well and reported 2.
+        self.assertEqual(pressed, ["a"])
+        self.assertEqual(engine.count, 1)
+        self.assertEqual(statuses[-1], ("done", 1))
+
+
 if __name__ == "__main__":
     unittest.main()

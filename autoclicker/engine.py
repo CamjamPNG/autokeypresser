@@ -8,6 +8,12 @@ import pyautogui
 
 from .profiles import step_delay_seconds
 
+# threading.Event.wait truncates its timeout to whole milliseconds on Windows, and
+# every platform's timer has a granularity, so a pause clamped to the time left can
+# return a fraction of a tick before the deadline. Within this slack the deadline
+# counts as reached.
+_DEADLINE_TOLERANCE_SECONDS = 0.001
+
 
 @dataclass
 class PressSettings:
@@ -131,8 +137,15 @@ class PressEngine:
         return time.monotonic() + seconds
 
     def _limit_hit(self, deadline):
-        """True once the deadline has passed, remembering that the limit ended it."""
-        if deadline is None or time.monotonic() < deadline:
+        """True once the deadline has passed, remembering that the limit ended it.
+
+        The comparison keeps one timer tick of slack. A wait clamped to the time left
+        can return a fraction of a tick early - Windows truncates the timeout to whole
+        milliseconds - and without the slack this read as "deadline not reached" and
+        let the next action of the cycle fire, so two actions passed the deadline
+        instead of the one in flight.
+        """
+        if deadline is None or time.monotonic() < deadline - _DEADLINE_TOLERANCE_SECONDS:
             return False
         self._limit_reached = True
         return True
