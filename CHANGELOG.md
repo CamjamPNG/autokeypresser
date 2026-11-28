@@ -58,6 +58,16 @@ published GitHub release notes and the repository history.
   single dismissible notice that never blocks the window; Windows, X11, and any
   session it cannot read stay silent, so a failed check never raises a false alarm.
 
+### Fixed
+
+- A run with a "Stop after" limit could send an extra action past the deadline on
+  Windows. The engine compares the monotonic clock against the deadline, and Windows'
+  clock is coarser than the millisecond the check assumed: CPython 3.12 reads
+  `GetTickCount64`, whose resolution is 15.625 ms, so a check taken just after the pause
+  clamped to the deadline could still report the previous tick and start another step.
+  The deadline now allows one tick of the clock it reads, taken from the platform's own
+  reported resolution rather than assumed.
+
 ## [2.0] - 2026-09-16
 
 ### Added

@@ -1,7 +1,11 @@
 name: CI
 
 on:
+  # A feature-branch push matches both triggers below, starting two identical
+  # matrices and a duplicated check rollup that reads "failed" when the queued
+  # twin is cancelled. PRs test the branch; only master re-tests after merge.
   push:
+    branches: [master]
   pull_request:
 
 jobs:

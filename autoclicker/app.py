@@ -13,7 +13,7 @@ from . import macro, preflight, profiles, themes
 from .profiles import load_profiles, save_profiles
 from . import updater
 
-APP_NAME = "AutoKeyPresser 2.0.6"
+APP_NAME = "AutoKeyPresser 2.0.7"
 
 # The action card labels map one-to-one onto the engine's input_type values.
 INPUT_TYPES = {"Mouse": "mouse", "Keyboard": "keyboard", "Text": "text"}
@@ -940,7 +940,7 @@ class AutoClickerApp:
         ttk.Label(footer, textvariable=self.status_var, style="Muted.TLabel").grid(
             row=0, column=1, sticky="w"
         )
-        ttk.Label(footer, text="v2.0.6  •  local by design", style="Quiet.TLabel").grid(
+        ttk.Label(footer, text="v2.0.7  •  local by design", style="Quiet.TLabel").grid(
             row=0, column=2, sticky="e"
         )
 

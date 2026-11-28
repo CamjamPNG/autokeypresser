@@ -1,5 +1,7 @@
+import math
 import threading
 import time
+import types
 import unittest
 from unittest import mock
 
@@ -500,7 +502,10 @@ class StopAfterTests(unittest.TestCase):
         )
 
         self.assertEqual(engine.count, 2)
-        self.assertLess(elapsed, 0.3)
+        # A count run ignores the 3600 s deadline, so a run that failed to end
+        # at its count is still going at the join timeout. The bound stays far
+        # under that and far over any thread-start overhead on a loaded runner.
+        self.assertLess(elapsed, 2.0)
         self.assertEqual(statuses[-1], ("done", 2))
 
     def test_the_start_delay_is_not_counted_against_the_limit(self):
@@ -548,9 +553,12 @@ class StopAfterTests(unittest.TestCase):
 
         # The clamped pause ends the run at the deadline, so the second action
         # of that cycle never runs: at most the action in flight goes past it.
+        # The bound sits well under the 5000 ms step delay, so an unclamped
+        # pause still fails here, and well over any scheduling delay a loaded
+        # runner adds: this asserts the clamp, not that the machine was quick.
         self.assertEqual(engine.count, 1)
         self.assertGreaterEqual(elapsed, 0.35)
-        self.assertLess(elapsed, 1.0)
+        self.assertLess(elapsed, 2.5)
         self.assertEqual(statuses[-1], ("done", 1))
 
     def test_a_randomized_interval_does_not_overshoot_the_deadline(self):
@@ -607,6 +615,80 @@ class StopAfterReviewFixTests(unittest.TestCase):
         self.assertLess(elapsed, 2.0)
         self.assertEqual([value for msg, value in statuses if msg == "limit"], [1])
         self.assertEqual(statuses[-1], ("done", engine.count))
+
+
+class CoarseMonotonicClock:
+    """Windows' monotonic clock in CPython 3.12: GetTickCount64, 15.625 ms a tick.
+
+    The clock reports the tick that has finished, so a read taken just after the
+    deadline can still name the previous one. Everything else is passed through to the
+    real time module, so the wait and the thread stay real.
+    """
+
+    def __init__(self, resolution):
+        self.resolution = resolution
+        self.origin = time.monotonic()
+
+    def __getattr__(self, name):
+        return getattr(time, name)
+
+    def monotonic(self):
+        return self.origin + math.floor(
+            (time.monotonic() - self.origin) / self.resolution
+        ) * self.resolution
+
+    def get_clock_info(self, name):
+        info = time.get_clock_info(name)
+        return types.SimpleNamespace(
+            implementation=info.implementation,
+            monotonic=info.monotonic,
+            adjustable=info.adjustable,
+            resolution=self.resolution,
+        )
+
+
+class DeadlineSlackTests(unittest.TestCase):
+    """A deadline check has to allow for the granularity of the clock it reads."""
+
+    # The timer increment windows-latest reports for GetTickCount64.
+    WINDOWS_TICK_SECONDS = 0.015625
+
+    def run_with_coarse_clock(self, resolution):
+        settings = make_engine(
+            input_type="keyboard",
+            interval_seconds=0,
+            repeat_until_stopped=True,
+            stop_after_seconds=0.4,
+        )
+        settings.actions = [
+            {"input_type": "keyboard", "key": "a", "delay_ms": 5000},
+            {"input_type": "keyboard", "key": "b"},
+        ]
+        pressed = []
+        statuses = []
+        with mock.patch(
+            "autoclicker.engine.pyautogui.press",
+            side_effect=lambda key: pressed.append(key),
+        ), mock.patch.object(
+            engine_module, "time", CoarseMonotonicClock(resolution)
+        ):
+            engine = PressEngine(settings, on_status=statuses.append)
+            engine.start()
+            engine._thread.join(timeout=3)
+
+        self.assertFalse(engine.running)
+        return engine, statuses, pressed
+
+    def test_a_coarse_clock_does_not_fire_another_action_past_the_deadline(self):
+        engine, statuses, pressed = self.run_with_coarse_clock(
+            self.WINDOWS_TICK_SECONDS
+        )
+
+        # The pause ends inside the last tick before the deadline, which the check used
+        # to read as "not yet": the run pressed b as well and reported 2.
+        self.assertEqual(pressed, ["a"])
+        self.assertEqual(engine.count, 1)
+        self.assertEqual(statuses[-1], ("done", 1))
 
 
 if __name__ == "__main__":
